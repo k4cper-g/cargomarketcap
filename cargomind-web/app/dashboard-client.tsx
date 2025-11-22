@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Line, LineChart, ResponsiveContainer } from "recharts"
-import { ArrowDown, ArrowUp, Search, Star, MoreHorizontal, ChevronDown, ChevronUp, ArrowRight, ChevronLeft, ChevronRight, TrendingDown, TrendingUp, ArrowLeftRight, MessageCircle, BarChart2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Search, Star, MoreHorizontal, ChevronDown, ChevronUp, ArrowRight, ChevronLeft, ChevronRight, TrendingDown, TrendingUp, ArrowLeftRight, MessageCircle, BarChart2, Loader2 } from 'lucide-react';
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import ReactCountryFlag from "react-country-flag";
 import { enrichRouteData, RouteStat } from "@/lib/market-utils";
+
+import { useRouter, useSearchParams } from "next/navigation";
 
 // Map 2-letter country codes to country codes that react-country-flag understands (ISO 3166-1 alpha-2)
 const getCountryCode = (code: string) => {
@@ -38,6 +40,11 @@ interface DashboardClientProps {
 }
 
 export default function DashboardClient({ initialData, initialGlobalStats, initialTotalCount }: DashboardClientProps) {
+  const searchParams = useSearchParams();
+  const searchQuery = searchParams.get('q') || '';
+  const searchOrigin = searchParams.get('origin') || '';
+  const searchDest = searchParams.get('dest') || '';
+  
   const [liveRoutes, setLiveRoutes] = useState<RouteStat[]>(initialData);
   const [loading, setLoading] = useState(false);
   const [expandedRoutes, setExpandedRoutes] = useState<Set<string>>(new Set());
@@ -167,12 +174,12 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
   };
 
   useEffect(() => {
-    // Don't refetch on initial mount if we have data and it's the first page with default sort
-    if (page === 1 && !sortConfig && liveRoutes.length > 0 && liveRoutes === initialData) {
+    // Don't refetch on initial mount if we have data and it's the first page with default sort and no search
+    if (page === 1 && !sortConfig && !searchQuery && !searchOrigin && !searchDest && liveRoutes.length > 0 && liveRoutes === initialData) {
       return; 
     }
     fetchData();
-  }, [page, itemsPerPage, sortConfig]);
+  }, [page, itemsPerPage, sortConfig, searchQuery, searchOrigin, searchDest]);
 
   async function fetchData() {
     setLoading(true);
@@ -181,6 +188,19 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
       .from('route_stats')
       .select('*', { count: 'exact' })
       .eq('body_group', 'ALL');
+
+    if (searchQuery) {
+      // Simple search implementation
+      query = query.or(`origin_country.ilike.%${searchQuery}%,dest_country.ilike.%${searchQuery}%`);
+    }
+
+    if (searchOrigin) {
+        query = query.eq('origin_country', searchOrigin);
+    }
+
+    if (searchDest) {
+        query = query.eq('dest_country', searchDest);
+    }
 
     if (sortConfig) {
       const dbSortKeys = ['offers_count', 'avg_rate_per_km', 'origin_country'];
@@ -266,21 +286,22 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
   };
 
   const sortedRoutes = useMemo(() => {
-    // If no sort config is present, or if the sort key is one of the server-side handled keys,
-    // we just return the liveRoutes as they are (assuming server returned them in order).
-    // Server side keys: ['offers_count', 'avg_rate_per_km', 'origin_country']
-    
-    // However, if we are sorting by a computed client-side field (like change_1h, market_cap, etc.),
-    // we MUST sort the *current page* of data here on the client.
-    // This preserves the "page 1 view" but reorders it based on the computed metric.
+    // Logic:
+    // 1. The database returns a 'page' of data (e.g., 50 rows) based on DB sort (default: offers_count).
+    // 2. If the user clicks a sort header:
+    //    a) If it's a DB-supported key (offers_count, avg_rate_per_km, origin_country), we refetch from DB (fetchData handles this).
+    //    b) If it's a computed key (change_*, volume, etc), we can ONLY sort the current page of data.
     
     if (!sortConfig) return liveRoutes;
 
     const serverSideKeys = ['offers_count', 'avg_rate_per_km', 'origin_country'];
+    
+    // If we are sorting by a server-side key, we trust that fetchData() already returned the correct order.
     if (serverSideKeys.includes(sortConfig.key)) {
-        return liveRoutes; // Already sorted by DB query
+        return liveRoutes; 
     }
     
+    // Otherwise, we are sorting the *currently visible page* by a client-side metric.
     return [...liveRoutes].sort((a, b) => {
       const aValue = a[sortConfig.key];
       const bValue = b[sortConfig.key];
@@ -298,7 +319,7 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
     });
   }, [liveRoutes, sortConfig]);
 
-  const toggleRoute = async (route: RouteStat) => {
+    const toggleRoute = async (route: RouteStat) => {
       const key = `${route.origin_country}-${route.dest_country}`;
       const newExpanded = new Set(expandedRoutes);
       
@@ -308,50 +329,53 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
           return;
       }
 
+      // Add to expanded immediately to render placeholder or cached data
       newExpanded.add(key);
       setExpandedRoutes(newExpanded);
 
+      // If we already have data, we don't need to do anything else
+      // This prevents layout jump because we render immediately
+      if (subRouteCache[key]) return;
+
       // Fetch sub-routes if not in cache
-      if (!subRouteCache[key]) {
-          setLoadingSubRoutes(prev => ({ ...prev, [key]: true }));
-          
-          // Fetch specific details excluding 'ALL'
-          const { data: subRoutes } = await supabase
-              .from('route_stats')
-              .select('*')
-              .eq('origin_country', route.origin_country)
-              .eq('dest_country', route.dest_country)
-              .neq('body_group', 'ALL')
-              .order('offers_count', { ascending: false });
-          
-          // We need history for these sub-routes too to show sparklines/changes
-          // Fetching for specific origin/dest
-          const { data: subHourly } = await supabase
-              .from('hourly_market_stats')
-              .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km')
-              .eq('origin_country', route.origin_country)
-              .eq('dest_country', route.dest_country)
-              .neq('body_group', 'ALL')
-              .gt('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-              .order('stat_hour', { ascending: true });
+      setLoadingSubRoutes(prev => ({ ...prev, [key]: true }));
+      
+      // Fetch specific details excluding 'ALL'
+      const { data: subRoutes } = await supabase
+          .from('route_stats')
+          .select('*')
+          .eq('origin_country', route.origin_country)
+          .eq('dest_country', route.dest_country)
+          .neq('body_group', 'ALL')
+          .order('offers_count', { ascending: false });
+      
+      // We need history for these sub-routes too to show sparklines/changes
+      // Fetching for specific origin/dest
+      const { data: subHourly } = await supabase
+          .from('hourly_market_stats')
+          .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km')
+          .eq('origin_country', route.origin_country)
+          .eq('dest_country', route.dest_country)
+          .neq('body_group', 'ALL')
+          .gt('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+          .order('stat_hour', { ascending: true });
 
-          const { data: subDaily } = await supabase
-              .from('daily_market_stats')
-              .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count')
-              .eq('origin_country', route.origin_country)
-              .eq('dest_country', route.dest_country)
-              .neq('body_group', 'ALL')
-              .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
-              .order('stat_date', { ascending: false });
+      const { data: subDaily } = await supabase
+          .from('daily_market_stats')
+          .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count')
+          .eq('origin_country', route.origin_country)
+          .eq('dest_country', route.dest_country)
+          .neq('body_group', 'ALL')
+          .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
+          .order('stat_date', { ascending: false });
 
-          if (subRoutes && subHourly && subDaily) {
-              const enrichedSub = enrichRouteData(subRoutes, subHourly, subDaily);
-              setSubRouteCache(prev => ({ ...prev, [key]: enrichedSub }));
-          }
-          
-          setLoadingSubRoutes(prev => ({ ...prev, [key]: false }));
+      if (subRoutes && subHourly && subDaily) {
+          const enrichedSub = enrichRouteData(subRoutes, subHourly, subDaily);
+          setSubRouteCache(prev => ({ ...prev, [key]: enrichedSub }));
       }
-  };
+      
+      setLoadingSubRoutes(prev => ({ ...prev, [key]: false }));
+    };
 
   // Computed properties for pagination
   const totalPages = Math.ceil(totalCount / itemsPerPage);
@@ -435,43 +459,43 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                 className="flex gap-3 overflow-x-auto py-1 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide items-center"
             >
                  {/* Topic Item */}
-                 <div className="flex-shrink-0 bg-[#FFF8E5] hover:bg-[#FFF0C9] text-foreground text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-[#FAE0A8] transition-colors">
+                 <div className="flex-shrink-0 bg-[#FFF8E5] hover:bg-[#FFF0C9] dark:bg-yellow-900/20 dark:hover:bg-yellow-900/30 dark:border-yellow-700/50 text-foreground text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-[#FAE0A8] transition-colors">
                     <span className="bg-[#F5A524] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">Topic</span>
                     <span>Mobility Package: Enforcement News</span>
                  </div>
 
                  {/* Fire Item */}
-                 <div className="flex-shrink-0 bg-[#FFF8E5] hover:bg-[#FFF0C9] text-foreground text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-[#FAE0A8] transition-colors">
+                 <div className="flex-shrink-0 bg-[#FFF8E5] hover:bg-[#FFF0C9] dark:bg-yellow-900/20 dark:hover:bg-yellow-900/30 dark:border-yellow-700/50 text-foreground text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-[#FAE0A8] transition-colors">
                     <span className="text-orange-500 text-sm">🔥</span>
                     <span>High Demand: ES → DE Refrigerated</span>
                  </div>
 
                  {/* Down Trend */}
-                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
                     <TrendingDown className="w-3 h-3 text-red-500" />
                     <span>Why are UK export rates dropping?</span>
                  </div>
 
                  {/* Comparison */}
-                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
                     <ArrowLeftRight className="w-3 h-3 text-blue-500" />
                     <span>Spot vs Contract: Q4 Outlook</span>
                  </div>
 
                  {/* Trending */}
-                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
                     <TrendingUp className="w-3 h-3 text-green-600" />
                     <span>Bullish momentum in Poland</span>
                  </div>
                  
                  {/* Narratives */}
-                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
                     <MessageCircle className="w-3 h-3 text-indigo-500" />
                     <span>What are the trending narratives?</span>
                  </div>
 
                  {/* Analysis */}
-                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-900 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                 <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
                     <BarChart2 className="w-3 h-3 text-orange-500" />
                     <span>Q4 2024 Freight Volume Forecast</span>
                  </div>
@@ -672,45 +696,47 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                                         <>
                                             {isLoadingSubs ? (
                                                 <TableRow className="bg-muted/20">
-                                                     <TableCell colSpan={11} className="text-center text-xs py-2 text-muted-foreground">
-                                                        Loading detailed breakdown...
+                                                     <TableCell colSpan={11} className="h-[40px] py-0">
+                                                        <div className="flex items-center justify-center h-full w-full">
+                                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
+                                                        </div>
                                                      </TableCell>
                                                 </TableRow>
                                             ) : (
                                                 subRoutes.map(sub => (
-                                                     <TableRow key={`${sub.origin_country}-${sub.dest_country}-${sub.body_group}`} className="bg-muted/10 border-b border-border/30">
-                                                        <TableCell></TableCell>
-                                                        <TableCell></TableCell>
-                                                        <TableCell>
+                                                     <TableRow key={`${sub.origin_country}-${sub.dest_country}-${sub.body_group}`} className="bg-muted/10 border-b border-border/30 h-8">
+                                                        <TableCell className="py-1"></TableCell>
+                                                        <TableCell className="py-1"></TableCell>
+                                                        <TableCell className="py-1">
                                                             <div className="flex items-center gap-3 pl-12">
-                                                                <span className="text-xs font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded-sm uppercase tracking-wide">
-                                                                    {sub.body_group}
+                                                                <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded-sm tracking-wide truncate max-w-[120px]">
+                                                                    {formatBodyGroup(sub.body_group)}
                                                                 </span>
                                                             </div>
                                                         </TableCell>
-                                                        <TableCell className="text-right font-semibold text-sm">
+                                                        <TableCell className="text-right font-semibold text-xs py-1">
                                                             <LiveTickerCell 
                                                                 value={sub.avg_rate_per_km} 
                                                                 formatter={(val) => `€${val.toFixed(2)}`}
                                                             />
                                                         </TableCell>
-                                                        <TableCell className="text-right text-xs font-medium">
+                                                        <TableCell className="text-right text-[10px] font-medium py-1">
                                                             <ChangeIndicator value={sub.change_1h || 0} />
                                                         </TableCell>
-                                                        <TableCell className="text-right text-xs font-medium">
+                                                        <TableCell className="text-right text-[10px] font-medium py-1">
                                                             <ChangeIndicator value={sub.change_24h || 0} />
                                                         </TableCell>
-                                                        <TableCell className="text-right text-xs font-medium">
+                                                        <TableCell className="text-right text-[10px] font-medium py-1">
                                                             <ChangeIndicator value={sub.change_7d || 0} />
                                                         </TableCell>
-                                                        <TableCell className="text-right text-xs font-medium text-muted-foreground">
+                                                        <TableCell className="text-right text-[10px] font-medium text-muted-foreground py-1">
                                                             €{((sub.market_cap || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                                         </TableCell>
-                                                        <TableCell className="text-right text-xs font-medium text-muted-foreground">
+                                                        <TableCell className="text-right text-[10px] font-medium text-muted-foreground py-1">
                                                             €{((sub.volume_24h || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                                         </TableCell>
-                                                        <TableCell>
-                                                             <div className="h-[25px] w-[140px] opacity-70">
+                                                        <TableCell className="py-1">
+                                                             <div className="h-[20px] w-[140px] opacity-70">
                                                                 {sub.sparkline && sub.sparkline.length > 0 && (
                                                                 <ResponsiveContainer width="100%" height="100%">
                                                                     <LineChart data={sub.sparkline}>
@@ -726,7 +752,7 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                                                                 )}
                                                             </div>
                                                         </TableCell>
-                                                        <TableCell></TableCell>
+                                                        <TableCell className="py-1"></TableCell>
                                                      </TableRow>
                                                 ))
                                             )}
@@ -833,6 +859,14 @@ function SortArrow({ active, direction }: { active: boolean; direction?: 'asc' |
             {direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
         </div>
     )
+}
+
+function formatBodyGroup(group: string) {
+    return group
+        .toLowerCase()
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
 }
 
 // Helper Component for % Change

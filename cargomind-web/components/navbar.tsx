@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ModeToggle } from "@/components/mode-toggle"
 import Image from "next/image"
+import { SearchModal } from "@/components/search-modal"
 
 export function Navbar() {
   return (
@@ -21,13 +22,10 @@ export function Navbar() {
           
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
             <Link href="/" className="hover:text-foreground transition-colors">
-              Freight Routes
+              Marketplaces
             </Link>
             <Link href="#" className="hover:text-foreground transition-colors">
-              Exchanges
-            </Link>
-            <Link href="#" className="hover:text-foreground transition-colors">
-              Community
+              Articles
             </Link>
             <Link href="#" className="hover:text-foreground transition-colors">
               Products
@@ -40,21 +38,10 @@ export function Navbar() {
             <div className="flex items-center gap-1 hover:text-foreground cursor-pointer">
               <span>Watchlist</span>
             </div>
-            <div className="flex items-center gap-1 hover:text-foreground cursor-pointer">
-              <span>Portfolio</span>
-            </div>
           </div>
 
           <div className="hidden md:flex items-center relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search..."
-              className="w-[200px] lg:w-[300px] pl-9 bg-muted/50 border-none focus-visible:ring-1"
-            />
-            <div className="absolute right-2.5 top-2.5 text-xs text-muted-foreground bg-background px-1.5 rounded border">
-              /
-            </div>
+            <SearchModal />
           </div>
 
           <div className="flex items-center gap-2">

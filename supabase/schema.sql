@@ -477,7 +477,8 @@ CREATE TABLE IF NOT EXISTS "public"."raw_offers" (
     "dest_country" "text",
     "dest_zip" "text",
     "vehicle_body_ids" "jsonb",
-    "full_payload" "jsonb"
+    "full_payload" "jsonb",
+    "source" "text" DEFAULT 'UNKNOWN'::"text"
 );
 
 

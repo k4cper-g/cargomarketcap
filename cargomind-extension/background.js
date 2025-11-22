@@ -77,13 +77,13 @@ async function syncDictionaryToSupabase(type, data) {
     }
 }
 
-async function syncToSupabase(offers) {
+async function syncToSupabase(offers, source) {
     totalSyncAttempts++;
     const syncId = `sync-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
     console.log(`\n========== SYNC ATTEMPT #${totalSyncAttempts} [${syncId}] ==========`);
     console.log(`📊 [Stats] Success: ${totalSyncSuccesses} | Failures: ${totalSyncFailures}`);
-    console.log(`📦 [Input] Received ${offers?.length || 0} offers`);
+    console.log(`📦 [Input] Received ${offers?.length || 0} offers from ${source || 'UNKNOWN'}`);
 
     if (!offers || offers.length === 0) {
         console.log("⚠️ [Supabase] No offers to sync");
@@ -171,7 +171,8 @@ async function syncToSupabase(offers) {
             dest_zip: destZip,
             dest_country: destCountry,
             vehicle_body_ids: o.vehicleBodyIds || [],
-            full_payload: o || {}
+            full_payload: o || {},
+            source: source || 'UNKNOWN'
         };
     });
 
@@ -242,8 +243,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
             switch (message.type) {
                 case "OFFERS_INTERCEPTED":
-                    console.log(`🎯 [Handler] Processing OFFERS_INTERCEPTED`);
-                    await syncToSupabase(message.payload);
+                    console.log(`🎯 [Handler] Processing OFFERS_INTERCEPTED from ${message.marketplace}`);
+                    await syncToSupabase(message.payload, message.marketplace);
                     break;
                 case "DICT_CURRENCIES":
                     console.log(`🎯 [Handler] Processing DICT_CURRENCIES`);

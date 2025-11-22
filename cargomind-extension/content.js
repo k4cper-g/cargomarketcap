@@ -47,8 +47,20 @@ window.addEventListener("message", (event) => {
 
   if (event.data && validTypes.includes(event.data.type)) {
     messageCount++;
+    
+    // Detect marketplace from hostname
+    const hostname = window.location.hostname;
+    let marketplace = 'UNKNOWN';
+    if (hostname.includes('timocom')) marketplace = 'TIMOCOM';
+    else if (hostname.includes('trans.eu')) marketplace = 'TRANSEU';
+    else if (hostname.includes('dat.com')) marketplace = 'DAT'; // Future proofing
+    
+    // Attach marketplace to message data
+    event.data.marketplace = marketplace;
+
     const timestamp = new Date().toISOString();
     console.log(`\n📨 [Content Script] Message #${messageCount} at ${timestamp}`);
+    console.log(`📨 [Content Script] Marketplace: ${marketplace}`);
     console.log(`📨 [Content Script] Type: ${event.data.type}`);
     console.log(`📨 [Content Script] Payload size: ${event.data.payload?.length || 0} items`);
     console.log(`📨 [Content Script] Source: ${event.data.source || 'unknown'}`);
