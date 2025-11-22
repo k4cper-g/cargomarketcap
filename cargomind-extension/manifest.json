@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "CargoMind",
+  "version": "1.1",
+  "permissions": [
+    "scripting",
+    "activeTab",
+    "storage",
+    "sidePanel"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.trans.eu/*", "https://*.timocom.com/*"], 
+      "js": ["content.js"],
+      "run_at": "document_start" 
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
