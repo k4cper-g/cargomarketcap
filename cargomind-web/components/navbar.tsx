@@ -1,14 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { Search, Menu, Download, LogOut, User as UserIcon, Settings } from "lucide-react"
+import { Search, Menu, LogOut, User as UserIcon, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { ModeToggle } from "@/components/mode-toggle"
 import Image from "next/image"
 import { SearchModal } from "@/components/search-modal"
 import { useAuth } from "@/components/auth-provider"
-import { usePathname } from "next/navigation"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,10 +17,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 export function Navbar() {
-  const { user, signOut } = useAuth()
-  const pathname = usePathname()
-
-  if (pathname === '/login' || pathname === '/signup') return null
+  const { user, signOut, openAuthDialog } = useAuth()
 
   return (
     <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -104,11 +98,9 @@ export function Navbar() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Link href="/login">
-                <Button variant="default" size="sm" className="hidden sm:flex font-semibold">
-                  Log In
-                </Button>
-              </Link>
+              <Button variant="default" size="sm" className="hidden sm:flex font-semibold" onClick={openAuthDialog}>
+                Log In
+              </Button>
             )}
 
             <Button variant="ghost" size="icon" className="sm:hidden">
