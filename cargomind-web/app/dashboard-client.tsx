@@ -71,6 +71,76 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
 
   // Realtime Subscription
   useEffect(() => {
+    const fetchAndUpdateRoute = async (origin: string, dest: string, body_group: string) => {
+        // 1. Fetch the specific route stat
+        const { data: routeData } = await supabase
+            .from('route_stats')
+            .select('*')
+            .eq('origin_country', origin)
+            .eq('dest_country', dest)
+            .eq('body_group', body_group)
+            .single();
+    
+        if (!routeData) return;
+    
+        // 2. Fetch Hourly (last 24h)
+        const { data: hourlyData } = await supabase
+            .from('hourly_market_stats')
+            .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km')
+            .eq('origin_country', origin)
+            .eq('dest_country', dest)
+            .eq('body_group', body_group)
+            .gt('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+            .order('stat_hour', { ascending: true });
+    
+        // 3. Fetch Daily (last 7d+)
+        const { data: dailyData } = await supabase
+            .from('daily_market_stats')
+            .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count')
+            .eq('origin_country', origin)
+            .eq('dest_country', dest)
+            .eq('body_group', body_group)
+            .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
+            .order('stat_date', { ascending: false });
+        
+        if (hourlyData && dailyData) {
+            // Use existing enrich function. It expects arrays.
+            // Note: we don't pass a baseRank here, so rank might reset or be undefined, 
+            // but we merge it into existing state where we can preserve rank if needed.
+            // Actually enrichRouteData sets rank based on index.
+            const enrichedList = enrichRouteData([routeData], hourlyData, dailyData);
+            
+            if (enrichedList.length > 0) {
+                const updatedRoute = enrichedList[0];
+                
+                // Update State
+                if (body_group === 'ALL') {
+                    setLiveRoutes(currentRoutes => 
+                        currentRoutes.map(route => {
+                            if (route.origin_country === origin && route.dest_country === dest) {
+                                // Preserve rank from existing route if possible, otherwise it might get overwritten by 1
+                                return { ...updatedRoute, rank: route.rank };
+                            }
+                            return route;
+                        })
+                    );
+                } else {
+                     const key = `${origin}-${dest}`;
+                     setSubRouteCache(currentCache => {
+                         if (!currentCache[key]) return currentCache;
+                         const updatedSubRoutes = currentCache[key].map(sub => {
+                            if (sub.body_group === body_group) {
+                                return { ...updatedRoute, rank: sub.rank };
+                            }
+                            return sub;
+                         });
+                         return { ...currentCache, [key]: updatedSubRoutes };
+                     });
+                }
+            }
+        }
+    };
+
     const channel = supabase
       .channel('realtime-route-stats')
       .on(
@@ -78,49 +148,8 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
         { event: 'UPDATE', schema: 'public', table: 'route_stats' },
         (payload: any) => {
             const newData = payload.new;
-            
-            // 1. Update Main Rows (body_group === 'ALL')
-            if (newData.body_group === 'ALL') {
-                setLiveRoutes(currentRoutes => 
-                    currentRoutes.map(route => {
-                        if (route.origin_country === newData.origin_country && 
-                            route.dest_country === newData.dest_country) {
-                            
-                            // Append new point to sparkline
-                            const newSparkline = route.sparkline ? [...route.sparkline, { value: newData.avg_rate_per_km }] : [{ value: newData.avg_rate_per_km }];
-                            
-                            return {
-                                ...route,
-                                avg_rate_per_km: newData.avg_rate_per_km,
-                                offers_count: newData.offers_count,
-                                sparkline: newSparkline,
-                            };
-                        }
-                        return route;
-                    })
-                );
-            } else {
-                // 2. Update Sub Rows (body_group !== 'ALL')
-                const key = `${newData.origin_country}-${newData.dest_country}`;
-                setSubRouteCache(currentCache => {
-                    if (!currentCache[key]) return currentCache;
-                    
-                    const updatedSubRoutes = currentCache[key].map(sub => {
-                        if (sub.body_group === newData.body_group) {
-                             const newSparkline = sub.sparkline ? [...sub.sparkline, { value: newData.avg_rate_per_km }] : [{ value: newData.avg_rate_per_km }];
-                             return {
-                                 ...sub,
-                                 avg_rate_per_km: newData.avg_rate_per_km,
-                                 offers_count: newData.offers_count,
-                                 sparkline: newSparkline
-                             };
-                        }
-                        return sub;
-                    });
-                    
-                    return { ...currentCache, [key]: updatedSubRoutes };
-                });
-            }
+            // Trigger full fetch to get dynamic computed fields (change_%, vol, etc)
+            fetchAndUpdateRoute(newData.origin_country, newData.dest_country, newData.body_group);
         }
       )
       .subscribe();
@@ -818,23 +847,24 @@ function ChangeIndicator({ value }: { value: number }) {
 }
 
 function LiveTickerCell({ value, className, formatter }: { value: number, className?: string, formatter?: (val: number) => React.ReactNode }) {
-    const [prevValue, setPrevValue] = useState(value);
+    const prevValueRef = React.useRef(value);
     const [flash, setFlash] = useState<'green' | 'red' | null>(null);
 
     useEffect(() => {
+        const prevValue = prevValueRef.current;
         if (value > prevValue) {
             setFlash('green');
         } else if (value < prevValue) {
             setFlash('red');
         }
-        setPrevValue(value);
+        prevValueRef.current = value;
 
         const timer = setTimeout(() => setFlash(null), 2000);
         return () => clearTimeout(timer);
     }, [value]);
 
     return (
-        <div className={`px-2 py-1 rounded transition-colors duration-1000 inline-block ${flash === 'green' ? 'bg-[#16c784]/20' : flash === 'red' ? 'bg-destructive/20' : 'bg-transparent'} ${className}`}>
+        <div className={`transition-colors duration-1000 inline-block ${flash === 'green' ? 'text-[#16c784]' : flash === 'red' ? 'text-destructive' : ''} ${className}`}>
             {formatter ? formatter(value) : value}
         </div>
     );
