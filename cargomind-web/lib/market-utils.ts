@@ -28,8 +28,14 @@ export function enrichRouteData(
     const lastWeekDateStr = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
 
     return baseRoutes.map((r: any, i: number) => {
-        // Key matching: must match ALL keys including body_group
-        const key = (d: any) => d.origin_country === r.origin_country && d.dest_country === r.dest_country && d.body_group === r.body_group;
+        // Key matching: must match ALL keys including body_group AND source (if available in r)
+        const key = (d: any) => {
+            const baseMatch = d.origin_country === r.origin_country && d.dest_country === r.dest_country && d.body_group === r.body_group;
+            if (r.source) {
+                return baseMatch && d.source === r.source;
+            }
+            return baseMatch;
+        };
         
         const routeHourly = hourlyChanges?.filter(key) || [];
         const routeDaily = dailyStats?.filter(key) || [];

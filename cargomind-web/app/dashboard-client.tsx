@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Line, LineChart, ResponsiveContainer } from "recharts"
-import { ArrowDown, ArrowUp, Search, Star, MoreHorizontal, ChevronDown, ChevronUp, ArrowRight, ChevronLeft, ChevronRight, TrendingDown, TrendingUp, ArrowLeftRight, MessageCircle, BarChart2, Loader2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Search, Star, MoreHorizontal, ChevronDown, ChevronUp, ArrowRight, ChevronLeft, ChevronRight, TrendingDown, TrendingUp, ArrowLeftRight, MessageCircle, BarChart2, Loader2, Filter, Columns } from 'lucide-react';
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,10 +18,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
 import ReactCountryFlag from "react-country-flag";
 import { enrichRouteData, RouteStat } from "@/lib/market-utils";
+import { ModeToggle } from "@/components/mode-toggle";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { ColumnsModal } from "@/components/dashboard/columns-modal";
+import { FilterModal, FilterState, ActiveFilters } from "@/components/dashboard/filter-modal";
 
 // Map 2-letter country codes to country codes that react-country-flag understands (ISO 3166-1 alpha-2)
 const getCountryCode = (code: string) => {
@@ -40,11 +50,38 @@ interface DashboardClientProps {
 }
 
 export default function DashboardClient({ initialData, initialGlobalStats, initialTotalCount }: DashboardClientProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const searchQuery = searchParams.get('q') || '';
-  const searchOrigin = searchParams.get('origin') || '';
-  const searchDest = searchParams.get('dest') || '';
+  const [searchOrigin, searchDest] = [searchParams.get('origin') || '', searchParams.get('dest') || ''];
+  const initialSource = searchParams.get('source') || 'ALL';
+  const [sourceFilter, setSourceFilter] = useState<string>(initialSource);
   
+  // Column Visibility State
+  const [visibleColumns, setVisibleColumns] = useState({
+      rank: true,
+      route: true,
+      price: true,
+      change1h: true,
+      change24h: true,
+      change7d: true,
+      marketCap: true,
+      volume: true,
+      chart: true,
+      actions: true
+  });
+
+  // Filter State
+  const [filters, setFilters] = useState<FilterState>({
+      minPrice: '',
+      maxPrice: '',
+      minMarketCap: '',
+      maxMarketCap: '',
+      minVolume: '',
+      maxVolume: '',
+  });
+  const [activeFilters, setActiveFilters] = useState<ActiveFilters>({});
+
   const [liveRoutes, setLiveRoutes] = useState<RouteStat[]>(initialData);
   const [loading, setLoading] = useState(false);
   const [expandedRoutes, setExpandedRoutes] = useState<Set<string>>(new Set());
@@ -70,6 +107,18 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
     }
   };
 
+  const handleSourceChange = (source: string) => {
+      setSourceFilter(source);
+      const params = new URLSearchParams(searchParams.toString());
+      if (source && source !== 'ALL') {
+          params.set('source', source);
+      } else {
+          params.delete('source');
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      router && router.replace(`/?${params.toString()}`, { scroll: false });
+  };
+
   useEffect(() => {
     checkScroll();
     window.addEventListener('resize', checkScroll);
@@ -86,6 +135,7 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
             .eq('origin_country', origin)
             .eq('dest_country', dest)
             .eq('body_group', body_group)
+            .eq('source', sourceFilter)
             .single();
     
         if (!routeData) return;
@@ -93,20 +143,22 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
         // 2. Fetch Hourly (last 24h)
         const { data: hourlyData } = await supabase
             .from('hourly_market_stats')
-            .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km')
+            .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km, source')
             .eq('origin_country', origin)
             .eq('dest_country', dest)
             .eq('body_group', body_group)
+            .eq('source', sourceFilter)
             .gt('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
             .order('stat_hour', { ascending: true });
     
         // 3. Fetch Daily (last 7d+)
         const { data: dailyData } = await supabase
             .from('daily_market_stats')
-            .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count')
+            .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count, source')
             .eq('origin_country', origin)
             .eq('dest_country', dest)
             .eq('body_group', body_group)
+            .eq('source', sourceFilter)
             .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
             .order('stat_date', { ascending: false });
         
@@ -155,8 +207,11 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
         { event: 'UPDATE', schema: 'public', table: 'route_stats' },
         (payload: any) => {
             const newData = payload.new;
-            // Trigger full fetch to get dynamic computed fields (change_%, vol, etc)
-            fetchAndUpdateRoute(newData.origin_country, newData.dest_country, newData.body_group);
+            // Only update if the source matches our current filter
+            if (newData.source === sourceFilter) {
+                // Trigger full fetch to get dynamic computed fields (change_%, vol, etc)
+                fetchAndUpdateRoute(newData.origin_country, newData.dest_country, newData.body_group);
+            }
         }
       )
       .subscribe();
@@ -164,7 +219,7 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [sourceFilter]);
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
@@ -175,11 +230,11 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
 
   useEffect(() => {
     // Don't refetch on initial mount if we have data and it's the first page with default sort and no search
-    if (page === 1 && !sortConfig && !searchQuery && !searchOrigin && !searchDest && liveRoutes.length > 0 && liveRoutes === initialData) {
+    if (page === 1 && !sortConfig && !searchQuery && !searchOrigin && !searchDest && sourceFilter === 'ALL' && Object.keys(activeFilters).length === 0 && liveRoutes.length > 0 && liveRoutes === initialData) {
       return; 
     }
     fetchData();
-  }, [page, itemsPerPage, sortConfig, searchQuery, searchOrigin, searchDest]);
+  }, [page, itemsPerPage, sortConfig, searchQuery, searchOrigin, searchDest, sourceFilter, activeFilters]);
 
   async function fetchData() {
     setLoading(true);
@@ -187,7 +242,30 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
     let query = supabase
       .from('route_stats')
       .select('*', { count: 'exact' })
-      .eq('body_group', 'ALL');
+      .eq('body_group', 'ALL')
+      .eq('source', sourceFilter);
+
+    // Apply Filters
+    if (activeFilters.minPrice) {
+        query = query.gte('avg_rate_per_km', activeFilters.minPrice);
+    }
+    if (activeFilters.maxPrice) {
+        query = query.lte('avg_rate_per_km', activeFilters.maxPrice);
+    }
+    
+    // New Filters (requires DB columns volume_24h, market_cap)
+    if (activeFilters.minVolume) {
+        query = query.gte('volume_24h', activeFilters.minVolume);
+    }
+    if (activeFilters.maxVolume) {
+        query = query.lte('volume_24h', activeFilters.maxVolume);
+    }
+    if (activeFilters.minMarketCap) {
+        query = query.gte('market_cap', activeFilters.minMarketCap);
+    }
+    if (activeFilters.maxMarketCap) {
+        query = query.lte('market_cap', activeFilters.maxMarketCap);
+    }
 
     if (searchQuery) {
       // Simple search implementation
@@ -220,15 +298,17 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
 
     const { data: hourlyChanges } = await supabase
       .from('hourly_market_stats')
-      .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km')
+      .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km, source')
       .eq('body_group', 'ALL')
+      .eq('source', sourceFilter)
       .gt('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .order('stat_hour', { ascending: true });
 
     const { data: dailyStats } = await supabase
         .from('daily_market_stats')
-        .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count')
+        .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count, source')
         .eq('body_group', 'ALL')
+        .eq('source', sourceFilter)
         .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
         .order('stat_date', { ascending: false });
 
@@ -346,6 +426,7 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
           .select('*')
           .eq('origin_country', route.origin_country)
           .eq('dest_country', route.dest_country)
+          .eq('source', sourceFilter)
           .neq('body_group', 'ALL')
           .order('offers_count', { ascending: false });
       
@@ -353,18 +434,20 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
       // Fetching for specific origin/dest
       const { data: subHourly } = await supabase
           .from('hourly_market_stats')
-          .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km')
+          .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km, source')
           .eq('origin_country', route.origin_country)
           .eq('dest_country', route.dest_country)
+          .eq('source', sourceFilter)
           .neq('body_group', 'ALL')
           .gt('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
           .order('stat_hour', { ascending: true });
 
       const { data: subDaily } = await supabase
           .from('daily_market_stats')
-          .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count')
+          .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count, source')
           .eq('origin_country', route.origin_country)
           .eq('dest_country', route.dest_country)
+          .eq('source', sourceFilter)
           .neq('body_group', 'ALL')
           .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
           .order('stat_date', { ascending: false });
@@ -409,7 +492,7 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
     <div className="min-h-screen bg-background font-sans text-foreground">
       
       {/* Global Stats Bar (Sub-nav style) */}
-      <div className="border-b py-2 px-4 md:px-8 text-xs flex flex-wrap gap-4 md:gap-8 bg-background text-muted-foreground overflow-x-auto whitespace-nowrap">
+      <div className="border-b py-2 px-4 md:px-8 text-xs flex flex-wrap gap-4 md:gap-8 bg-background text-muted-foreground overflow-x-auto whitespace-nowrap items-center">
         <div className="flex items-center gap-1">
           <span>Routes:</span>
           <span className="text-primary font-medium">{totalCount}</span>
@@ -513,77 +596,148 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
             )}
         </div>
 
+        {/* Toolbar: Source Filters & Actions */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            {/* Source Filter Pills */}
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={() => handleSourceChange('ALL')}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${sourceFilter === 'ALL' ? 'bg-[#efffc4] text-[#365314]' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+                >
+                    <BarChart2 className={`w-4 h-4 ${sourceFilter === 'ALL' ? 'text-[#4d7c0f]' : 'text-muted-foreground'}`} />
+                    All
+                </button>
+                <button
+                    onClick={() => handleSourceChange('TIMOCOM')}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${sourceFilter === 'TIMOCOM' ? 'bg-[#efffc4] text-[#365314]' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+                >
+                    <div className={`w-2 h-2 rounded-full ${sourceFilter === 'TIMOCOM' ? 'bg-[#4d7c0f]' : 'bg-blue-500'}`} />
+                    Timocom
+                </button>
+                <button
+                    onClick={() => handleSourceChange('TRANSEU')}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${sourceFilter === 'TRANSEU' ? 'bg-[#efffc4] text-[#365314]' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+                >
+                    <div className={`w-2 h-2 rounded-full ${sourceFilter === 'TRANSEU' ? 'bg-[#4d7c0f]' : 'bg-green-500'}`} />
+                    Trans.eu
+                </button>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+                <FilterModal 
+                    filters={filters} 
+                    setFilters={setFilters} 
+                    activeFilters={activeFilters} 
+                    setActiveFilters={setActiveFilters}
+                    resetPage={() => setPage(1)}
+                />
+
+                <ColumnsModal 
+                    visibleColumns={visibleColumns} 
+                    setVisibleColumns={setVisibleColumns} 
+                />
+                
+                <ModeToggle className="h-8 w-8" />
+            </div>
+        </div>
+
         {/* Main Data Table */}
         <Card className="border-0 shadow-none bg-transparent">
             <Table>
                 <TableHeader>
-                    <TableRow className="hover:bg-transparent border-b border-border/50">
+                    <TableRow className="hover:bg-transparent border-t border-b border-border/50 h-12">
                         <TableHead className="w-[40px]"></TableHead>
                         
-                        <TableHead className="w-[50px]">
-                            <div className="flex items-center gap-1">
-                                <span>#</span>
-                            </div>
-                        </TableHead>
+                        {visibleColumns.rank && (
+                            <TableHead className="w-[50px] font-bold text-foreground text-xs whitespace-nowrap">
+                                <div className="flex items-center gap-1 cursor-pointer" onClick={() => handleSort('offers_count')}>
+                                    <SortArrow active={sortConfig?.key === 'offers_count'} direction={sortConfig?.direction} />
+                                    <span>#</span>
+                                </div>
+                            </TableHead>
+                        )}
                         
-                        <TableHead className="cursor-pointer hover:text-primary group" onClick={() => handleSort('origin_country')}>
-                            <div className="flex items-center gap-1">
-                                <SortArrow active={sortConfig?.key === 'origin_country'} direction={sortConfig?.direction} />
-                                <span>Route Name</span>
-                            </div>
-                        </TableHead>
+                        {visibleColumns.route && (
+                            <TableHead className="w-[250px] cursor-pointer hover:text-primary group font-bold text-foreground text-xs whitespace-nowrap" onClick={() => handleSort('origin_country')}>
+                                <div className="flex items-center gap-1">
+                                    <span>Route Name</span>
+                                    <SortArrow active={sortConfig?.key === 'origin_country'} direction={sortConfig?.direction} />
+                                </div>
+                            </TableHead>
+                        )}
                         
-                        <TableHead className="text-right cursor-pointer hover:text-primary group" onClick={() => handleSort('avg_rate_per_km')}>
-                            <div className="flex items-center justify-end gap-1">
-                                <SortArrow active={sortConfig?.key === 'avg_rate_per_km'} direction={sortConfig?.direction} />
-                                <span>Price</span>
-                            </div>
-                        </TableHead>
+                        {visibleColumns.price && (
+                            <TableHead className="w-[100px] text-right cursor-pointer hover:text-primary group font-bold text-foreground text-xs whitespace-nowrap" onClick={() => handleSort('avg_rate_per_km')}>
+                                <div className="flex items-center justify-end gap-1">
+                                    <span>Price (€/km)</span>
+                                    <SortArrow active={sortConfig?.key === 'avg_rate_per_km'} direction={sortConfig?.direction} />
+                                </div>
+                            </TableHead>
+                        )}
                         
-                        <TableHead className="text-right cursor-pointer hover:text-primary group" onClick={() => handleSort('change_1h')}>
-                            <div className="flex items-center justify-end gap-1">
-                                <SortArrow active={sortConfig?.key === 'change_1h'} direction={sortConfig?.direction} />
-                                <span>1h %</span>
-                            </div>
-                        </TableHead>
+                        {visibleColumns.change1h && (
+                            <TableHead className="w-[80px] text-right cursor-pointer hover:text-primary group font-bold text-foreground text-xs whitespace-nowrap" onClick={() => handleSort('change_1h')}>
+                                <div className="flex items-center justify-end gap-1">
+                                    <span>1h</span>
+                                    <SortArrow active={sortConfig?.key === 'change_1h'} direction={sortConfig?.direction} />
+                                </div>
+                            </TableHead>
+                        )}
                         
-                        <TableHead className="text-right cursor-pointer hover:text-primary group" onClick={() => handleSort('change_24h')}>
-                            <div className="flex items-center justify-end gap-1">
-                                <SortArrow active={sortConfig?.key === 'change_24h'} direction={sortConfig?.direction} />
-                                <span>24h %</span>
-                            </div>
-                        </TableHead>
+                        {visibleColumns.change24h && (
+                            <TableHead className="w-[80px] text-right cursor-pointer hover:text-primary group font-bold text-foreground text-xs whitespace-nowrap" onClick={() => handleSort('change_24h')}>
+                                <div className="flex items-center justify-end gap-1">
+                                    <span>24h</span>
+                                    <SortArrow active={sortConfig?.key === 'change_24h'} direction={sortConfig?.direction} />
+                                </div>
+                            </TableHead>
+                        )}
                         
-                        <TableHead className="text-right cursor-pointer hover:text-primary group" onClick={() => handleSort('change_7d')}>
-                            <div className="flex items-center justify-end gap-1">
-                                <SortArrow active={sortConfig?.key === 'change_7d'} direction={sortConfig?.direction} />
-                                <span>7d %</span>
-                            </div>
-                        </TableHead>
+                        {visibleColumns.change7d && (
+                            <TableHead className="w-[80px] text-right cursor-pointer hover:text-primary group font-bold text-foreground text-xs whitespace-nowrap" onClick={() => handleSort('change_7d')}>
+                                <div className="flex items-center justify-end gap-1">
+                                    <span>7d</span>
+                                    <SortArrow active={sortConfig?.key === 'change_7d'} direction={sortConfig?.direction} />
+                                </div>
+                            </TableHead>
+                        )}
                         
-                        <TableHead className="text-right cursor-pointer hover:text-primary group" onClick={() => handleSort('market_cap')}>
-                            <div className="flex items-center justify-end gap-1">
-                                <SortArrow active={sortConfig?.key === 'market_cap'} direction={sortConfig?.direction} />
-                                <span>Market Cap</span>
-                            </div>
-                        </TableHead>
+                        {visibleColumns.volume && (
+                            <TableHead className="w-[120px] text-right cursor-pointer hover:text-primary group font-bold text-foreground text-xs whitespace-nowrap" onClick={() => handleSort('volume_24h')}>
+                                <div className="flex items-center justify-end gap-1">
+                                    <span>24h Volume</span>
+                                    <SortArrow active={sortConfig?.key === 'volume_24h'} direction={sortConfig?.direction} />
+                                </div>
+                            </TableHead>
+                        )}
+
+                        {visibleColumns.marketCap && (
+                            <TableHead className="w-[120px] text-right cursor-pointer hover:text-primary group font-bold text-foreground text-xs whitespace-nowrap" onClick={() => handleSort('market_cap')}>
+                                <div className="flex items-center justify-end gap-1">
+                                    <span>Route Value</span>
+                                    <SortArrow active={sortConfig?.key === 'market_cap'} direction={sortConfig?.direction} />
+                                </div>
+                            </TableHead>
+                        )}
                         
-                        <TableHead className="text-right cursor-pointer hover:text-primary group" onClick={() => handleSort('volume_24h')}>
-                            <div className="flex items-center justify-end gap-1">
-                                <SortArrow active={sortConfig?.key === 'volume_24h'} direction={sortConfig?.direction} />
-                                <span>Volume(24h)</span>
-                            </div>
-                        </TableHead>
-                        
-                        <TableHead className="w-[150px]">Last 24 Hours</TableHead>
-                        <TableHead></TableHead>
+                        {visibleColumns.chart && (
+                            <TableHead className="w-[150px] text-right font-bold text-foreground text-xs whitespace-nowrap">Last 24 Hours</TableHead>
+                        )}
+                        <TableHead className="w-[50px]"></TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
                     {sortedRoutes.length === 0 ? (
                          <TableRow>
                             <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
-                                {loading ? "Loading market data..." : "No routes found."}
+                                {loading ? (
+                                    <div className="flex items-center justify-center h-full w-full">
+                                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                    </div>
+                                ) : (
+                                    "No routes found."
+                                )}
                             </TableCell>
                         </TableRow>
                     ) : (
@@ -594,7 +748,7 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                             const isLoadingSubs = loadingSubRoutes[key];
 
                             return (
-                                <React.Fragment key={key}>
+                                <React.Fragment key={`${key}-${index}`}>
                                     <TableRow 
                                         className="hover:bg-muted/50 border-b border-border/50 cursor-pointer transition-colors"
                                         onClick={() => toggleRoute(route)}
@@ -602,93 +756,122 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                                         <TableCell>
                                             <Star className="w-4 h-4 text-muted-foreground hover:text-yellow-400 cursor-pointer" />
                                         </TableCell>
-                                        <TableCell className="text-muted-foreground">{index + 1}</TableCell>
-                                        <TableCell>
-                                            <div className="flex items-center gap-3">
-                                                <div className="flex -space-x-2">
-                                                    <div className="relative z-20">
-                                                        <ReactCountryFlag 
-                                                            countryCode={getCountryCode(route.origin_country)} 
-                                                            svg 
-                                                            className="rounded-full border border-muted-foreground/20"
-                                                            style={{ width: '1.5em', height: '1.5em', objectFit: 'cover' }} 
-                                                        />
+                                        
+                                        {visibleColumns.rank && (
+                                            <TableCell className="text-muted-foreground">{index + 1}</TableCell>
+                                        )}
+                                        
+                                        {visibleColumns.route && (
+                                            <TableCell>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex -space-x-2">
+                                                        <div className="relative z-20">
+                                                            <ReactCountryFlag 
+                                                                countryCode={getCountryCode(route.origin_country)} 
+                                                                svg 
+                                                                className="rounded-full border border-muted-foreground/20"
+                                                                style={{ width: '1.5em', height: '1.5em', objectFit: 'cover' }} 
+                                                            />
+                                                        </div>
+                                                        <div className="relative z-10 -ml-2">
+                                                            <ReactCountryFlag 
+                                                                countryCode={getCountryCode(route.dest_country)} 
+                                                                svg 
+                                                                className="rounded-full border border-muted-foreground/20"
+                                                                style={{ width: '1.5em', height: '1.5em', objectFit: 'cover' }} 
+                                                            />
+                                                        </div>
                                                     </div>
-                                                    <div className="relative z-10 -ml-2">
-                                                        <ReactCountryFlag 
-                                                            countryCode={getCountryCode(route.dest_country)} 
-                                                            svg 
-                                                            className="rounded-full border border-muted-foreground/20"
-                                                            style={{ width: '1.5em', height: '1.5em', objectFit: 'cover' }} 
-                                                        />
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-sm flex items-center gap-1">
+                                                            {route.origin_country} 
+                                                            <ArrowRight className="w-3 h-3 text-muted-foreground/50" />
+                                                            {route.dest_country}
+                                                        </span>
+                                                        {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-bold text-sm flex items-center gap-1">
-                                                        {route.origin_country} 
-                                                        <ArrowRight className="w-3 h-3 text-muted-foreground/50" />
-                                                        {route.dest_country}
-                                                    </span>
-                                                    {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                                            </TableCell>
+                                        )}
+                                        
+                                        {visibleColumns.price && (
+                                            <TableCell className="text-right font-semibold">
+                                                <LiveTickerCell 
+                                                    value={route.avg_rate_per_km} 
+                                                    formatter={(val) => `€${val.toFixed(2)}`}
+                                                />
+                                            </TableCell>
+                                        )}
+                                        
+                                        {visibleColumns.change1h && (
+                                            <TableCell className="text-right text-xs font-medium">
+                                                <ChangeIndicator value={route.change_1h || 0} />
+                                            </TableCell>
+                                        )}
+                                        
+                                        {visibleColumns.change24h && (
+                                            <TableCell className="text-right text-xs font-medium">
+                                                <ChangeIndicator value={route.change_24h || 0} />
+                                            </TableCell>
+                                        )}
+                                        
+                                        {visibleColumns.change7d && (
+                                            <TableCell className="text-right text-xs font-medium">
+                                                <ChangeIndicator value={route.change_7d || 0} />
+                                            </TableCell>
+                                        )}
+                                        
+                                        {visibleColumns.marketCap && (
+                                            <TableCell className="text-right text-sm font-medium">
+                                                €{((route.market_cap || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                            </TableCell>
+                                        )}
+                                        
+                                        {visibleColumns.volume && (
+                                            <TableCell className="text-right text-sm font-medium">
+                                                <div className="flex flex-col items-end">
+                                                    <span>€{((route.volume_24h || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                                                 </div>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-right font-semibold">
-                                            <LiveTickerCell 
-                                                value={route.avg_rate_per_km} 
-                                                formatter={(val) => `€${val.toFixed(2)}`}
-                                            />
-                                        </TableCell>
-                                        <TableCell className="text-right text-xs font-medium">
-                                            <ChangeIndicator value={route.change_1h || 0} />
-                                        </TableCell>
-                                        <TableCell className="text-right text-xs font-medium">
-                                            <ChangeIndicator value={route.change_24h || 0} />
-                                        </TableCell>
-                                        <TableCell className="text-right text-xs font-medium">
-                                            <ChangeIndicator value={route.change_7d || 0} />
-                                        </TableCell>
-                                        <TableCell className="text-right text-sm font-medium">
-                                            €{((route.market_cap || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                        </TableCell>
-                                        <TableCell className="text-right text-sm font-medium">
-                                            <div className="flex flex-col items-end">
-                                                <span>€{((route.volume_24h || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="h-[35px] w-[140px]">
-                                                {route.sparkline && route.sparkline.length > 0 && (
-                                                <ResponsiveContainer width="100%" height="100%">
-                                                    <LineChart data={route.sparkline}>
-                                                        <Line 
-                                                            type="monotone" 
-                                                            dataKey="value" 
-                                                            stroke={ (route.change_1h || 0) >= 0 ? "#16c784" : "hsl(var(--destructive))" } 
-                                                            strokeWidth={2} 
-                                                            dot={false} 
-                                                        />
-                                                    </LineChart>
-                                                </ResponsiveContainer>
-                                                )}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell>
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="h-8 w-8 p-0">
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                    <DropdownMenuItem>View Analysis</DropdownMenuItem>
-                                                    <DropdownMenuItem>Set Price Alert</DropdownMenuItem>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem>Trade (Book)</DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </TableCell>
+                                            </TableCell>
+                                        )}
+                                        
+                                        {visibleColumns.chart && (
+                                            <TableCell>
+                                                <div className="h-[35px] w-[140px]">
+                                                    {route.sparkline && route.sparkline.length > 0 && (
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <LineChart data={route.sparkline}>
+                                                            <Line 
+                                                                type="monotone" 
+                                                                dataKey="value" 
+                                                                stroke={ (route.change_1h || 0) >= 0 ? "#16c784" : "hsl(var(--destructive))" } 
+                                                                strokeWidth={2} 
+                                                                dot={false} 
+                                                            />
+                                                        </LineChart>
+                                                    </ResponsiveContainer>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                        )}
+                                        {visibleColumns.actions && (
+                                            <TableCell>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" className="h-8 w-8 p-0">
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                                        <DropdownMenuItem>View Analysis</DropdownMenuItem>
+                                                        <DropdownMenuItem>Set Price Alert</DropdownMenuItem>
+                                                        <DropdownMenuSeparator />
+                                                        <DropdownMenuItem>Trade (Book)</DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </TableCell>
+                                        )}
                                     </TableRow>
                                     
                                     {/* Expanded Sub-Rows */}
@@ -696,70 +879,96 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                                         <>
                                             {isLoadingSubs ? (
                                                 <TableRow className="bg-muted/20">
-                                                     <TableCell colSpan={11} className="h-[40px] py-0">
+                                                     <TableCell colSpan={Object.values(visibleColumns).filter(Boolean).length + 1} className="h-[40px] py-0">
                                                         <div className="flex items-center justify-center h-full w-full">
-                                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
+                                                            <Loader2 className="h-6 w-6 animate-spin text-primary" />
                                                         </div>
                                                      </TableCell>
                                                 </TableRow>
                                             ) : (
-                                                subRoutes.map(sub => (
-                                                     <TableRow key={`${sub.origin_country}-${sub.dest_country}-${sub.body_group}`} className="bg-muted/10 border-b border-border/30 h-8">
+                                                subRoutes.map((sub, subIndex) => (
+                                                     <TableRow key={`${sub.origin_country}-${sub.dest_country}-${sub.body_group}-${subIndex}`} className="bg-muted/10 border-b border-border/30 h-8">
                                                         <TableCell className="py-1"></TableCell>
-                                                        <TableCell className="py-1"></TableCell>
-                                                        <TableCell className="py-1">
-                                                            <div className="flex items-center gap-3 pl-12">
-                                                                <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded-sm tracking-wide truncate max-w-[120px]">
-                                                                    {formatBodyGroup(sub.body_group)}
-                                                                </span>
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell className="text-right font-semibold text-xs py-1">
-                                                            <LiveTickerCell 
-                                                                value={sub.avg_rate_per_km} 
-                                                                formatter={(val) => `€${val.toFixed(2)}`}
-                                                            />
-                                                        </TableCell>
-                                                        <TableCell className="text-right text-[10px] font-medium py-1">
-                                                            <ChangeIndicator value={sub.change_1h || 0} />
-                                                        </TableCell>
-                                                        <TableCell className="text-right text-[10px] font-medium py-1">
-                                                            <ChangeIndicator value={sub.change_24h || 0} />
-                                                        </TableCell>
-                                                        <TableCell className="text-right text-[10px] font-medium py-1">
-                                                            <ChangeIndicator value={sub.change_7d || 0} />
-                                                        </TableCell>
-                                                        <TableCell className="text-right text-[10px] font-medium text-muted-foreground py-1">
-                                                            €{((sub.market_cap || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                                        </TableCell>
-                                                        <TableCell className="text-right text-[10px] font-medium text-muted-foreground py-1">
-                                                            €{((sub.volume_24h || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                                        </TableCell>
-                                                        <TableCell className="py-1">
-                                                             <div className="h-[20px] w-[140px] opacity-70">
-                                                                {sub.sparkline && sub.sparkline.length > 0 && (
-                                                                <ResponsiveContainer width="100%" height="100%">
-                                                                    <LineChart data={sub.sparkline}>
-                                                                        <Line 
-                                                                            type="monotone" 
-                                                                            dataKey="value" 
-                                                                            stroke={ (sub.change_1h || 0) >= 0 ? "#16c784" : "hsl(var(--destructive))" } 
-                                                                            strokeWidth={1} 
-                                                                            dot={false} 
-                                                                        />
-                                                                    </LineChart>
-                                                                </ResponsiveContainer>
-                                                                )}
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell className="py-1"></TableCell>
+                                                        
+                                                        {visibleColumns.rank && <TableCell className="py-1"></TableCell>}
+                                                        
+                                                        {visibleColumns.route && (
+                                                            <TableCell className="py-1">
+                                                                <div className="flex items-center gap-3 pl-12">
+                                                                    <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-2 py-0.5 rounded-sm tracking-wide truncate max-w-[120px]">
+                                                                        {formatBodyGroup(sub.body_group)}
+                                                                    </span>
+                                                                </div>
+                                                            </TableCell>
+                                                        )}
+                                                        
+                                                        {visibleColumns.price && (
+                                                            <TableCell className="text-right font-semibold text-xs py-1">
+                                                                <LiveTickerCell 
+                                                                    value={sub.avg_rate_per_km} 
+                                                                    formatter={(val) => `€${val.toFixed(2)}`}
+                                                                />
+                                                            </TableCell>
+                                                        )}
+                                                        
+                                                        {visibleColumns.change1h && (
+                                                            <TableCell className="text-right text-[10px] font-medium py-1">
+                                                                <ChangeIndicator value={sub.change_1h || 0} />
+                                                            </TableCell>
+                                                        )}
+                                                        
+                                                        {visibleColumns.change24h && (
+                                                            <TableCell className="text-right text-[10px] font-medium py-1">
+                                                                <ChangeIndicator value={sub.change_24h || 0} />
+                                                            </TableCell>
+                                                        )}
+                                                        
+                                                        {visibleColumns.change7d && (
+                                                            <TableCell className="text-right text-[10px] font-medium py-1">
+                                                                <ChangeIndicator value={sub.change_7d || 0} />
+                                                            </TableCell>
+                                                        )}
+                                                        
+                                                        {visibleColumns.marketCap && (
+                                                            <TableCell className="text-right text-[10px] font-medium text-muted-foreground py-1">
+                                                                €{((sub.market_cap || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                            </TableCell>
+                                                        )}
+                                                        
+                                                        {visibleColumns.volume && (
+                                                            <TableCell className="text-right text-[10px] font-medium text-muted-foreground py-1">
+                                                                €{((sub.volume_24h || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                            </TableCell>
+                                                        )}
+                                                        
+                                                        {visibleColumns.chart && (
+                                                            <TableCell className="py-1">
+                                                                 <div className="h-[20px] w-[140px] opacity-70">
+                                                                    {sub.sparkline && sub.sparkline.length > 0 && (
+                                                                    <ResponsiveContainer width="100%" height="100%">
+                                                                        <LineChart data={sub.sparkline}>
+                                                                            <Line 
+                                                                                type="monotone" 
+                                                                                dataKey="value" 
+                                                                                stroke={ (sub.change_1h || 0) >= 0 ? "#16c784" : "hsl(var(--destructive))" } 
+                                                                                strokeWidth={1} 
+                                                                                dot={false} 
+                                                                            />
+                                                                        </LineChart>
+                                                                    </ResponsiveContainer>
+                                                                    )}
+                                                                </div>
+                                                            </TableCell>
+                                                        )}
+                                                        
+                                                        {visibleColumns.actions && <TableCell className="py-1"></TableCell>}
                                                      </TableRow>
                                                 ))
                                             )}
                                             {/* If no subs found (unlikely if aggregate exists but possible if data is weird) */}
                                             {!isLoadingSubs && subRoutes.length === 0 && (
                                                 <TableRow className="bg-muted/20">
-                                                    <TableCell colSpan={11} className="text-center text-xs py-2 text-muted-foreground">
+                                                    <TableCell colSpan={Object.values(visibleColumns).filter(Boolean).length + 1} className="text-center text-xs py-2 text-muted-foreground">
                                                         No detailed breakdown available.
                                                     </TableCell>
                                                 </TableRow>
@@ -852,7 +1061,7 @@ function SortArrow({ active, direction }: { active: boolean; direction?: 'asc' |
     // Using absolute positioning to keep it from affecting layout flow
     // Or we can just use a fixed width container if we prefer
     // But request was "not affect viewport" which usually means not shifting text
-    if (!active) return <div className="w-3 h-3 inline-block" />; // Placeholder to keep alignment if we want stable width
+    if (!active) return <div className="w-3 h-3 inline-flex" />; // Placeholder to keep alignment if we want stable width
     
     return (
         <div className={`w-3 h-3 flex-shrink-0 text-primary inline-flex items-center justify-center`}>

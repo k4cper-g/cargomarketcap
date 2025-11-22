@@ -13,22 +13,25 @@ export default async function DashboardPage() {
     .from('route_stats')
     .select('*', { count: 'exact' })
     .eq('body_group', 'ALL')
+    .eq('source', 'ALL')
     .order('offers_count', { ascending: false })
     .range((page - 1) * itemsPerPage, page * itemsPerPage - 1);
 
   // 2. Hourly Stats (For Sparklines & 1h Change)
   const { data: hourlyChanges } = await supabase
     .from('hourly_market_stats')
-    .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km')
+    .select('origin_country, dest_country, body_group, stat_hour, avg_rate_per_km, source')
     .eq('body_group', 'ALL')
+    .eq('source', 'ALL')
     .gt('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
     .order('stat_hour', { ascending: true });
 
   // 3. Daily Stats (For 24h/7d Change & Market Cap)
   const { data: dailyStats } = await supabase
       .from('daily_market_stats')
-      .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count')
+      .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count, source')
       .eq('body_group', 'ALL')
+      .eq('source', 'ALL')
       .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
       .order('stat_date', { ascending: false });
 

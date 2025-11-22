@@ -1,34 +1,35 @@
+import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
-
-export const metadata = {
-  title: "Cargo Prices, Charts and Analytics | CargoMarketCap",
-  description: "Real-time freight market prices, charts and analytics",
-};
-
-import { cn } from "@/lib/utils";
-
+import { AuthProvider } from "@/components/auth-provider";
 import { Navbar } from "@/components/navbar";
+
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "CargoMarketCap",
+  description: "Freight market intelligence and analytics",
+};
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={cn("min-h-screen bg-background font-sans antialiased", inter.variable)}>
+      <body className={inter.className}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          <Navbar />
-          {children}
+          <AuthProvider>
+            <Navbar />
+            {children}
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

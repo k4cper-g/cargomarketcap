@@ -28,6 +28,7 @@ export function SearchModal() {
   
   const [origin, setOrigin] = useState(searchParams.get('origin') || '');
   const [dest, setDest] = useState(searchParams.get('dest') || '');
+  const [source, setSource] = useState(searchParams.get('source') || 'ALL');
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -49,6 +50,9 @@ export function SearchModal() {
       if (dest) params.set('dest', dest);
       else params.delete('dest');
 
+      if (source && source !== 'ALL') params.set('source', source);
+      else params.delete('source');
+
       // Clear simple 'q' if using advanced search
       params.delete('q');
 
@@ -59,6 +63,7 @@ export function SearchModal() {
   const clearFilters = () => {
       setOrigin('');
       setDest('');
+      setSource('ALL');
       router.replace('/');
       setOpen(false);
   };
@@ -98,6 +103,19 @@ export function SearchModal() {
                 onChange={(e) => setDest(e.target.value.toUpperCase())}
                 maxLength={2}
              />
+          </div>
+          <div className="grid gap-2">
+             <label className="text-sm font-medium">Source Marketplace</label>
+             <Select value={source} onValueChange={setSource}>
+                <SelectTrigger>
+                    <SelectValue placeholder="Select source" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="ALL">All Marketplaces</SelectItem>
+                    <SelectItem value="TIMOCOM">Timocom</SelectItem>
+                    <SelectItem value="TRANSEU">Trans.eu</SelectItem>
+                </SelectContent>
+             </Select>
           </div>
         </div>
         <div className="flex justify-between">
