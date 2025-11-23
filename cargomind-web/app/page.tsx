@@ -26,6 +26,15 @@ export default async function DashboardPage() {
       .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
       .order('stat_date', { ascending: false });
 
+  // Fetch hourly stats for sparkline (last 24 hours)
+  const { data: hourlyStats } = await supabase
+      .from('hourly_market_stats')
+      .select('origin_country, dest_country, body_group, source, stat_hour, avg_rate_per_km')
+      .eq('body_group', 'ALL')
+      .eq('source', 'ALL')
+      .gte('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .order('stat_hour', { ascending: true });
+
   // Calculate Global Stats
   const todayStr = new Date().toISOString().split('T')[0];
   const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
@@ -58,13 +67,27 @@ export default async function DashboardPage() {
     dominance: dominanceStr
   };
 
-  // Data from route_stats_live already has all computed fields - just add rank
-  const initialData: RouteStat[] = (routes || []).map((r: any, i: number) => ({
-    ...r,
-    rank: i + 1,
-    // sparkline not available from DB yet - will be empty for now
-    sparkline: []
-  }));
+  // Build sparkline lookup from hourly stats
+  const sparklineLookup: Record<string, { value: number }[]> = {};
+  if (hourlyStats) {
+    hourlyStats.forEach((h: any) => {
+      const key = `${h.origin_country}-${h.dest_country}`;
+      if (!sparklineLookup[key]) {
+        sparklineLookup[key] = [];
+      }
+      sparklineLookup[key].push({ value: h.avg_rate_per_km });
+    });
+  }
+
+  // Data from route_stats_live already has all computed fields - add rank and sparkline
+  const initialData: RouteStat[] = (routes || []).map((r: any, i: number) => {
+    const key = `${r.origin_country}-${r.dest_country}`;
+    return {
+      ...r,
+      rank: i + 1,
+      sparkline: sparklineLookup[key] || []
+    };
+  });
 
   return (
     <DashboardClient

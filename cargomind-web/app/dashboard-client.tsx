@@ -188,16 +188,20 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
             .channel('realtime-route-stats-live')
             .on(
                 'postgres_changes',
-                { event: 'UPDATE', schema: 'public', table: 'route_stats_live' },
+                { event: '*', schema: 'public', table: 'route_stats_live' },
                 (payload: any) => {
+                    console.log('[Realtime] Received event:', payload.eventType, payload.new?.origin_country, '->', payload.new?.dest_country);
                     const newData = payload.new;
+                    if (!newData) return;
                     // Only update if the source matches our current filter
                     if (newData.source === sourceFilter) {
                         updateRouteFromPayload(newData);
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                console.log('[Realtime] Subscription status:', status);
+            });
 
         return () => {
             supabase.removeChannel(channel);
@@ -309,6 +313,15 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
             .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
             .order('stat_date', { ascending: false });
 
+        // Fetch hourly stats for sparkline (last 24 hours)
+        const { data: hourlyStats } = await supabase
+            .from('hourly_market_stats')
+            .select('origin_country, dest_country, body_group, source, stat_hour, avg_rate_per_km')
+            .eq('body_group', 'ALL')
+            .eq('source', sourceFilter)
+            .gte('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+            .order('stat_hour', { ascending: true });
+
         if (routes) {
             // Update global stats if we have daily data
             if (dailyStats) {
@@ -338,12 +351,27 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                 setGlobalStats({ marketVol7d: totalVol7d, vol24h: totalVol24h, dominance: dominanceStr });
             }
 
-            // Data from route_stats_live already has all computed fields - just add rank
-            const enriched: RouteStat[] = routes.map((r: any, i: number) => ({
-                ...r,
-                rank: (page - 1) * itemsPerPage + i + 1,
-                sparkline: [] // sparkline not available from DB
-            }));
+            // Build sparkline lookup from hourly stats
+            const sparklineLookup: Record<string, { value: number }[]> = {};
+            if (hourlyStats) {
+                hourlyStats.forEach((h: any) => {
+                    const key = `${h.origin_country}-${h.dest_country}`;
+                    if (!sparklineLookup[key]) {
+                        sparklineLookup[key] = [];
+                    }
+                    sparklineLookup[key].push({ value: h.avg_rate_per_km });
+                });
+            }
+
+            // Data from route_stats_live already has all computed fields - add rank and sparkline
+            const enriched: RouteStat[] = routes.map((r: any, i: number) => {
+                const key = `${r.origin_country}-${r.dest_country}`;
+                return {
+                    ...r,
+                    rank: (page - 1) * itemsPerPage + i + 1,
+                    sparkline: sparklineLookup[key] || []
+                };
+            });
             setLiveRoutes(enriched);
         }
 
