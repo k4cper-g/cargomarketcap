@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Line, LineChart, ResponsiveContainer } from "recharts"
 import { ArrowUp, Search, Star, MoreHorizontal, ChevronDown, ChevronUp, ArrowRight, ChevronLeft, ChevronRight, TrendingDown, TrendingUp, ArrowLeftRight, MessageCircle, BarChart2, Loader2, Filter, Columns } from 'lucide-react';
@@ -130,84 +130,6 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
         return () => window.removeEventListener('resize', checkScroll);
     }, []);
 
-    // Realtime Subscription - route_stats_live updates every 5 seconds (server-side throttled)
-    useEffect(() => {
-        // Update route directly from realtime payload - all fields pre-computed
-        const updateRouteFromPayload = (payload: any) => {
-            const newData = payload;
-            const { origin_country, dest_country, body_group } = newData;
-
-            if (body_group === 'ALL') {
-                setLiveRoutes(currentRoutes =>
-                    currentRoutes.map(route => {
-                        if (route.origin_country === origin_country && route.dest_country === dest_country) {
-                            // Update ALL fields from payload (server computed)
-                            return {
-                                ...route,
-                                avg_rate_per_km: newData.avg_rate_per_km,
-                                offers_count: newData.offers_count,
-                                change_1h: newData.change_1h ?? route.change_1h,
-                                change_24h: newData.change_24h ?? route.change_24h,
-                                change_7d: newData.change_7d ?? route.change_7d,
-                                volume_24h: newData.volume_24h ?? route.volume_24h,
-                                market_cap: newData.market_cap ?? route.market_cap,
-                                last_updated: newData.last_updated,
-                                // Preserve: rank, sparkline (not in DB)
-                            };
-                        }
-                        return route;
-                    })
-                );
-            } else {
-                const key = `${origin_country}-${dest_country}`;
-                setSubRouteCache(currentCache => {
-                    if (!currentCache[key]) return currentCache;
-                    const updatedSubRoutes = currentCache[key].map(sub => {
-                        if (sub.body_group === body_group) {
-                            return {
-                                ...sub,
-                                avg_rate_per_km: newData.avg_rate_per_km,
-                                offers_count: newData.offers_count,
-                                change_1h: newData.change_1h ?? sub.change_1h,
-                                change_24h: newData.change_24h ?? sub.change_24h,
-                                change_7d: newData.change_7d ?? sub.change_7d,
-                                volume_24h: newData.volume_24h ?? sub.volume_24h,
-                                market_cap: newData.market_cap ?? sub.market_cap,
-                                last_updated: newData.last_updated,
-                            };
-                        }
-                        return sub;
-                    });
-                    return { ...currentCache, [key]: updatedSubRoutes };
-                });
-            }
-        };
-
-        // Subscribe to route_stats_live - already throttled server-side (every 5 seconds)
-        const channel = supabase
-            .channel('realtime-route-stats-live')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'route_stats_live' },
-                (payload: any) => {
-                    console.log('[Realtime] Received event:', payload.eventType, payload.new?.origin_country, '->', payload.new?.dest_country);
-                    const newData = payload.new;
-                    if (!newData) return;
-                    // Only update if the source matches our current filter
-                    if (newData.source === sourceFilter) {
-                        updateRouteFromPayload(newData);
-                    }
-                }
-            )
-            .subscribe((status) => {
-                console.log('[Realtime] Subscription status:', status);
-            });
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [sourceFilter]);
-
     const scroll = (direction: 'left' | 'right') => {
         if (scrollContainerRef.current) {
             const scrollAmount = 400;
@@ -223,8 +145,8 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
     }, [watchlist, onlyWatchlist]);
 
     useEffect(() => {
-        // Don't refetch on initial mount if we have data and it's the first page with default sort and no search
-        if (!onlyWatchlist && page === 1 && !sortConfig && !searchQuery && !searchOrigin && !searchDest && sourceFilter === 'ALL' && Object.keys(activeFilters).length === 0 && liveRoutes.length > 0 && liveRoutes === initialData) {
+        // Don't refetch on initial mount if we have data and it's the first page with default settings
+        if (!onlyWatchlist && page === 1 && itemsPerPage === 50 && !sortConfig && !searchQuery && !searchOrigin && !searchDest && sourceFilter === 'ALL' && Object.keys(activeFilters).length === 0 && liveRoutes.length > 0 && liveRoutes === initialData) {
             return;
         }
         fetchData();
@@ -233,9 +155,9 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
     async function fetchData() {
         setLoading(true);
 
-        // Fetch from route_stats_live - all fields pre-computed server-side
+        // Fetch from route_stats
         let query = supabase
-            .from('route_stats_live')
+            .from('route_stats')
             .select('*', { count: 'exact' })
             .eq('body_group', 'ALL')
             .eq('source', sourceFilter);
@@ -287,9 +209,9 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
             query = query.eq('dest_country', searchDest);
         }
 
-        // Sorting - now all fields are available for DB-side sorting
+        // Sorting - only DB fields can be sorted server-side (change_* are computed client-side)
         if (sortConfig) {
-            const dbSortKeys = ['offers_count', 'avg_rate_per_km', 'origin_country', 'change_1h', 'change_24h', 'change_7d', 'volume_24h', 'market_cap'];
+            const dbSortKeys = ['offers_count', 'avg_rate_per_km', 'origin_country', 'volume_24h', 'market_cap'];
             if (dbSortKeys.includes(sortConfig.key)) {
                 query = query.order(sortConfig.key, { ascending: sortConfig.direction === 'asc' });
             } else {
@@ -313,13 +235,13 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
             .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
             .order('stat_date', { ascending: false });
 
-        // Fetch hourly stats for sparkline (last 24 hours)
+        // Fetch hourly stats for sparkline and change calculations (last 7 days)
         const { data: hourlyStats } = await supabase
             .from('hourly_market_stats')
             .select('origin_country, dest_country, body_group, source, stat_hour, avg_rate_per_km')
             .eq('body_group', 'ALL')
             .eq('source', sourceFilter)
-            .gte('stat_hour', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+            .gte('stat_hour', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
             .order('stat_hour', { ascending: true });
 
         if (routes) {
@@ -351,25 +273,60 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                 setGlobalStats({ marketVol7d: totalVol7d, vol24h: totalVol24h, dominance: dominanceStr });
             }
 
-            // Build sparkline lookup from hourly stats
-            const sparklineLookup: Record<string, { value: number }[]> = {};
+            // Build hourly stats lookup by route
+            const hourlyLookup: Record<string, { stat_hour: string; avg_rate_per_km: number }[]> = {};
             if (hourlyStats) {
                 hourlyStats.forEach((h: any) => {
                     const key = `${h.origin_country}-${h.dest_country}`;
-                    if (!sparklineLookup[key]) {
-                        sparklineLookup[key] = [];
+                    if (!hourlyLookup[key]) {
+                        hourlyLookup[key] = [];
                     }
-                    sparklineLookup[key].push({ value: h.avg_rate_per_km });
+                    hourlyLookup[key].push({ stat_hour: h.stat_hour, avg_rate_per_km: h.avg_rate_per_km });
                 });
             }
 
-            // Data from route_stats_live already has all computed fields - add rank and sparkline
+            // Helper to find rate at a specific time ago
+            const findRateAtTime = (routeHourly: { stat_hour: string; avg_rate_per_km: number }[], hoursAgo: number) => {
+                const targetTime = Date.now() - hoursAgo * 60 * 60 * 1000;
+                // Find the closest hourly stat before or at the target time
+                let closest = null;
+                for (const h of routeHourly) {
+                    const hTime = new Date(h.stat_hour).getTime();
+                    if (hTime <= targetTime) {
+                        closest = h;
+                    }
+                }
+                return closest?.avg_rate_per_km;
+            };
+
+            // Enrich routes with computed change values and sparkline
             const enriched: RouteStat[] = routes.map((r: any, i: number) => {
                 const key = `${r.origin_country}-${r.dest_country}`;
+                const routeHourly = hourlyLookup[key] || [];
+
+                // Sparkline: last 24 hours only
+                const last24h = Date.now() - 24 * 60 * 60 * 1000;
+                const sparkline = routeHourly
+                    .filter(h => new Date(h.stat_hour).getTime() >= last24h)
+                    .map(h => ({ value: h.avg_rate_per_km }));
+
+                // Compute changes from hourly stats
+                const currentRate = r.avg_rate_per_km;
+                const rate1hAgo = findRateAtTime(routeHourly, 1);
+                const rate24hAgo = findRateAtTime(routeHourly, 24);
+                const rate7dAgo = findRateAtTime(routeHourly, 24 * 7);
+
+                const change_1h = rate1hAgo && rate1hAgo > 0 ? ((currentRate - rate1hAgo) / rate1hAgo) * 100 : 0;
+                const change_24h = rate24hAgo && rate24hAgo > 0 ? ((currentRate - rate24hAgo) / rate24hAgo) * 100 : 0;
+                const change_7d = rate7dAgo && rate7dAgo > 0 ? ((currentRate - rate7dAgo) / rate7dAgo) * 100 : 0;
+
                 return {
                     ...r,
                     rank: (page - 1) * itemsPerPage + i + 1,
-                    sparkline: sparklineLookup[key] || []
+                    sparkline,
+                    change_1h,
+                    change_24h,
+                    change_7d
                 };
             });
             setLiveRoutes(enriched);
@@ -379,12 +336,14 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
     }
 
     const handleSort = (key: keyof RouteStat) => {
+        // Three-click cycle: desc -> asc -> clear (returns to default sort)
         let direction: 'asc' | 'desc' = 'desc';
 
         if (sortConfig && sortConfig.key === key) {
             if (sortConfig.direction === 'desc') {
                 direction = 'asc';
             } else {
+                // Third click: clear sort, return to default
                 setSortConfig(null);
                 return;
             }
@@ -402,7 +361,7 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
 
         if (!sortConfig) return liveRoutes;
 
-        const serverSideKeys = ['offers_count', 'avg_rate_per_km', 'origin_country'];
+        const serverSideKeys = ['offers_count', 'avg_rate_per_km', 'origin_country', 'volume_24h', 'market_cap'];
 
         // If we are sorting by a server-side key, we trust that fetchData() already returned the correct order.
         if (serverSideKeys.includes(sortConfig.key)) {
@@ -448,23 +407,68 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
         // Fetch sub-routes if not in cache
         setLoadingSubRoutes(prev => ({ ...prev, [key]: true }));
 
-        // Fetch sub-routes from route_stats_live - all fields pre-computed
-        const { data: subRoutes } = await supabase
-            .from('route_stats_live')
-            .select('*')
-            .eq('origin_country', route.origin_country)
-            .eq('dest_country', route.dest_country)
-            .eq('source', sourceFilter)
-            .neq('body_group', 'ALL')
-            .order('offers_count', { ascending: false });
+        // Fetch sub-routes and their hourly stats in parallel
+        const [{ data: subRoutes }, { data: subHourlyStats }] = await Promise.all([
+            supabase
+                .from('route_stats')
+                .select('*')
+                .eq('origin_country', route.origin_country)
+                .eq('dest_country', route.dest_country)
+                .eq('source', sourceFilter)
+                .neq('body_group', 'ALL')
+                .order('offers_count', { ascending: false }),
+            supabase
+                .from('hourly_market_stats')
+                .select('body_group, stat_hour, avg_rate_per_km')
+                .eq('origin_country', route.origin_country)
+                .eq('dest_country', route.dest_country)
+                .eq('source', sourceFilter)
+                .neq('body_group', 'ALL')
+                .gte('stat_hour', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+                .order('stat_hour', { ascending: true })
+        ]);
 
         if (subRoutes) {
-            // Data already has all computed fields - just add rank and empty sparkline
-            const enrichedSub: RouteStat[] = subRoutes.map((r: any, i: number) => ({
-                ...r,
-                rank: i + 1,
-                sparkline: []
-            }));
+            // Build hourly lookup by body_group
+            const subHourlyLookup: Record<string, { stat_hour: string; avg_rate_per_km: number }[]> = {};
+            if (subHourlyStats) {
+                subHourlyStats.forEach((h: any) => {
+                    if (!subHourlyLookup[h.body_group]) {
+                        subHourlyLookup[h.body_group] = [];
+                    }
+                    subHourlyLookup[h.body_group].push({ stat_hour: h.stat_hour, avg_rate_per_km: h.avg_rate_per_km });
+                });
+            }
+
+            // Helper to find rate at a specific time ago
+            const findRateAtTime = (routeHourly: { stat_hour: string; avg_rate_per_km: number }[], hoursAgo: number) => {
+                const targetTime = Date.now() - hoursAgo * 60 * 60 * 1000;
+                let closest = null;
+                for (const h of routeHourly) {
+                    const hTime = new Date(h.stat_hour).getTime();
+                    if (hTime <= targetTime) {
+                        closest = h;
+                    }
+                }
+                return closest?.avg_rate_per_km;
+            };
+
+            const enrichedSub: RouteStat[] = subRoutes.map((r: any, i: number) => {
+                const routeHourly = subHourlyLookup[r.body_group] || [];
+                const currentRate = r.avg_rate_per_km;
+                const rate1hAgo = findRateAtTime(routeHourly, 1);
+                const rate24hAgo = findRateAtTime(routeHourly, 24);
+                const rate7dAgo = findRateAtTime(routeHourly, 24 * 7);
+
+                return {
+                    ...r,
+                    rank: i + 1,
+                    sparkline: [],
+                    change_1h: rate1hAgo && rate1hAgo > 0 ? ((currentRate - rate1hAgo) / rate1hAgo) * 100 : 0,
+                    change_24h: rate24hAgo && rate24hAgo > 0 ? ((currentRate - rate24hAgo) / rate24hAgo) * 100 : 0,
+                    change_7d: rate7dAgo && rate7dAgo > 0 ? ((currentRate - rate7dAgo) / rate7dAgo) * 100 : 0
+                };
+            });
             setSubRouteCache(prev => ({ ...prev, [key]: enrichedSub }));
         }
 
@@ -861,20 +865,10 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                                                 )}
                                                 {visibleColumns.actions && (
                                                     <TableCell>
-                                                        <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" className="h-8 w-8 p-0">
-                                                                    <MoreHorizontal className="h-4 w-4" />
-                                                                </Button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end">
-                                                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                                                <DropdownMenuItem>View Analysis</DropdownMenuItem>
-                                                                <DropdownMenuItem>Set Price Alert</DropdownMenuItem>
-                                                                <DropdownMenuSeparator />
-                                                                <DropdownMenuItem>Trade (Book)</DropdownMenuItem>
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
+                                                        {/* TODO: Re-enable dropdown when actions are implemented */}
+                                                        <Button variant="ghost" className="h-8 w-8 p-0 cursor-not-allowed opacity-50" disabled>
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </Button>
                                                     </TableCell>
                                                 )}
                                             </TableRow>
@@ -1083,90 +1077,25 @@ function formatBodyGroup(group: string) {
         .join(' ');
 }
 
-// Helper Component for % Change with smooth transitions
+// Helper Component for % Change display
 function ChangeIndicator({ value }: { value: number }) {
-    // Track stable value to prevent flickering from small recalculations
-    const stableValueRef = useRef(value);
-    const [displayValue, setDisplayValue] = useState(value);
-
-    // Threshold for considering a change meaningful (0.1% absolute change)
-    const CHANGE_THRESHOLD = 0.1;
-
-    useEffect(() => {
-        const diff = Math.abs(value - stableValueRef.current);
-        // Only update display if change is meaningful
-        if (diff >= CHANGE_THRESHOLD) {
-            stableValueRef.current = value;
-            setDisplayValue(value);
-        }
-    }, [value]);
-
-    const isPositive = displayValue >= 0;
+    const isPositive = value >= 0;
 
     return (
-        <div className={`flex items-center justify-end gap-1 font-semibold transition-colors duration-300 ${isPositive ? 'text-[#01921c]' : 'text-destructive'}`}>
-            <span className={`transition-transform duration-300 ${isPositive ? 'rotate-0' : 'rotate-180'}`}>
+        <div className={`flex items-center justify-end gap-1 font-semibold ${isPositive ? 'text-[#01921c]' : 'text-destructive'}`}>
+            <span className={isPositive ? '' : 'rotate-180'}>
                 <ArrowUp className="w-3 h-3" />
             </span>
-            {Math.abs(displayValue).toFixed(2)}%
+            {Math.abs(value).toFixed(2)}%
         </div>
     )
 }
 
 function LiveTickerCell({ value, className, formatter }: { value: number, className?: string, formatter?: (val: number) => React.ReactNode }) {
-    // Track the "stable" value - only update when change is meaningful
-    const stableValueRef = useRef(value);
-    const [flash, setFlash] = useState<'green' | 'red' | null>(null);
-    const flashTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Minimum % change threshold to trigger flash (0.5%)
-    const FLASH_THRESHOLD = 0.005;
-
-    // Only respond to value changes, NOT flash changes
-    useEffect(() => {
-        const stableValue = stableValueRef.current;
-
-        // Calculate percentage change from stable value
-        const percentChange = stableValue !== 0
-            ? Math.abs((value - stableValue) / stableValue)
-            : (value !== 0 ? 1 : 0);
-
-        // Only flash if change exceeds threshold
-        if (percentChange >= FLASH_THRESHOLD) {
-            const newFlash = value > stableValue ? 'green' : 'red';
-
-            // Update stable value to new value
-            stableValueRef.current = value;
-
-            // Clear existing timeout before setting new one
-            if (flashTimeoutRef.current) {
-                clearTimeout(flashTimeoutRef.current);
-            }
-
-            // Set the flash color
-            setFlash(newFlash);
-
-            // Reset flash after delay
-            flashTimeoutRef.current = setTimeout(() => {
-                setFlash(null);
-                flashTimeoutRef.current = null;
-            }, 2000);
-        }
-    }, [value]); // Only depend on value, NOT flash
-
-    // Cleanup on unmount only
-    useEffect(() => {
-        return () => {
-            if (flashTimeoutRef.current) {
-                clearTimeout(flashTimeoutRef.current);
-            }
-        };
-    }, []);
-
     return (
-        <div className={`transition-colors duration-500 inline-block ${flash === 'green' ? 'text-[#16c784]' : flash === 'red' ? 'text-destructive' : ''} ${className}`}>
+        <span className={className}>
             {formatter ? formatter(value) : value}
-        </div>
+        </span>
     );
 }
 
