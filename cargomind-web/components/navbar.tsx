@@ -42,9 +42,9 @@ export function Navbar() {
 
         <div className="ml-auto flex items-center gap-4">
           <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground mr-4">
-            <div className="flex items-center gap-1 hover:text-foreground cursor-pointer">
+            <Link href="/watchlist" className="flex items-center gap-1 hover:text-foreground cursor-pointer transition-colors">
               <span>Watchlist</span>
-            </div>
+            </Link>
           </div>
 
           <div className="hidden md:flex items-center relative">

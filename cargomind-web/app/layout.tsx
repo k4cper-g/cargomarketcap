@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/components/auth-provider";
 import { Navbar } from "@/components/navbar";
+import { WatchlistProvider } from "@/components/watchlist-provider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -27,8 +28,10 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            <Navbar />
-            {children}
+            <WatchlistProvider>
+              <Navbar />
+              {children}
+            </WatchlistProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

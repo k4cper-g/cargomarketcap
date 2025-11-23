@@ -8,3 +8,4 @@ UPDATE "public"."raw_offers"
 SET "source" = 'TIMOCOM' 
 WHERE "source" = 'UNKNOWN';
 
+
