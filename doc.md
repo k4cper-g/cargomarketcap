@@ -1,158 +1,74 @@
-Oto kompletna **Dokumentacja Projektowa (Master Blueprint)**.
+Opis Projektu: Cargobloom
+Tagline: Demokratyzacja danych logistycznych. Od zgadywania stawek do rynkowej precyzji. Domena główna: cargobloom.io Model: Data-Driven Freight Intelligence Ecosystem
 
-Została napisana w formacie `.md` (Markdown), zoptymalizowanym pod kątem "karmienia" innego modelu AI (Gemini/Claude/GPT-4) w edytorze Cursor. Dokument zawiera kontekst biznesowy, architekturę techniczną, schematy bazy danych oraz konkretne instrukcje implementacyjne.
+1. Streszczenie (Executive Summary)
+Cargobloom to platforma analityczna typu FreightTech, której celem jest stanie się "Bloombergiem dla branży logistycznej". Rozwiązujemy fundamentalny problem braku przejrzystości cenowej na rynku transportowym (TSL).
 
-Skopiuj poniższą treść, zapisz jako `PROJECT_BLUEPRINT.md` i wrzuć do Cursora.
+Wizualnie i funkcjonalnie wzorujemy się na dostępności i prostocie serwisu CoinMarketCap, ale przenosimy ten model na twardy rynek B2B. Zamiast kryptowalut, indeksujemy tysiące tras transportowych w czasie rzeczywistym.
 
------
+Naszą unikalną przewagą (unfair advantage) jest model pozyskiwania danych: nie kupujemy ich, lecz crowdsourcujemy je oddolnie za pomocą narzędzi typu "utility", które spedytorzy chcą instalować, bo ułatwiają im codzienną pracę.
 
-# PROJECT BLUEPRINT: Logistics Pricing Intelligence Copilot (MVP)
+2. Problem Rynek
+Branża logistyczna, mimo gigantycznej skali, wciąż działa w oparciu o sekrety i silosy danych.
 
-## 1\. Kontekst i Wizja Produktu
+Brak Benchmarku: Spedytorzy i załadowcy (importerzy/eksporterzy) nie mają jednego, wiarygodnego źródła "ceny rynkowej" dla danej trasy w danym dniu. Negocjacje opierają się na zgadywaniu i przestarzałych plikach Excel.
 
-### Cel Biznesowy
+Nieefektywny Workflow: Spedytorzy tracą godziny na przełączanie się między oknami giełd transportowych (np. Trans.eu, Timocom), a własnymi systemami i kalkulatorami, co spowalnia proces decyzyjny.
 
-Budujemy wtyczkę do przeglądarki Google Chrome (Manifest V3) dla spedytorów pracujących na giełdzie transportowej **Timocom**. Narzędzie działa jako "Pasywny Radar Cenowy" (Pricing Intelligence).
+Utracone Marże (Silosy Danych): W dużych firmach spedycyjnych pracownicy nie wiedzą, za ile ich kolega z biurka obok sprzedał podobny ładunek wczoraj, przez co firma jako całość traci potencjał negocjacyjny.
 
-### Główny Problem
+3. Rozwiązanie: Ekosystem Cargobloom
+Nie budujemy tylko strony internetowej. Budujemy trzywarstwowy ekosystem, który sam się napędza:
 
-Spedytorzy ręcznie przeszukują setki ofert, tracąc czas na analizę stawek. Nie wiedzą, jaka jest realna cena rynkowa (Market Rate) dla danej trasy w danym momencie, przez co albo przepłacają przewoźnikom, albo oferują stawki, na które nikt nie odpowiada.
+Warstwa A: Publiczny Hub Danych (cargobloom.io)
+Rola: Lead Magnet (Magnes na użytkowników) i budowanie autorytetu marki.
 
-### Rozwiązanie (Core Value Proposition)
+Opis: Darmowa, ogólnodostępna strona wzorowana na interfejsie CoinMarketCap. Prezentuje listę tras transportowych (np. PL→DE, CN→EU) wraz z kluczowymi wskaźnikami: średnią stawką rynkową (Avg Rate/km), trendem tygodniowym i wolumenem ofert.
 
-**"Invisible Analyst"**: Wtyczka w tle przechwytuje dane, które spedytor przegląda (bez aktywnego scrapowania/klikania). Analizuje surowe dane z API giełdy, wycina szum (spam/błędy) i wyświetla w Panelu Bocznym:
+Cel: Przyciągnąć szeroki ruch z branży, który szuka szybkiej odpowiedzi na pytanie: "Czy stawki rosną, czy spadają?".
 
-1.  Realną stawkę rynkową (Mediana/EMA).
-2.  Trend (Ceny rosną/spadają).
-3.  Listę ofert "przetłumaczoną" na czytelny format (zamiast ID).
+Warstwa B: Silnik Danych – Cargobloom Assistant (Wtyczka Chrome)
+Rola: "Data Mining Utility" – narzędzie dostarczające wartość użytkownikowi w zamian za anonimowe dane.
 
------
+Opis: Asystent przeglądarkowy działający w modelu "Waze dla logistyki". Wtyczka integruje się wizualnie z popularnymi giełdami transportowymi.
 
-## 2\. Architektura Techniczna
+Wartość dla Spedytora: Gdy spedytor widzi ofertę ładunku na giełdzie, wtyczka w czasie rzeczywistym (w formie dyskretnego dymka/overlay) podpowiada mu aktualną średnią stawkę rynkową dla tej konkretnej trasy, bez konieczności opuszczania strony giełdy.
 
-### Tech Stack
+Mechanizm: W zamian za tę "supermoc", wtyczka anonimowo zbiera punkty danych o stawkach, które zasilają główny hub.
 
-  * **Frontend:** Chrome Extension (Manifest V3), Vanilla JS / HTML / CSS.
-  * **Backend/Database:** Supabase (PostgreSQL + PostgREST API).
-  * **Komunikacja:** `window.postMessage` (Injected -\> Content) -\> `chrome.runtime` (Content -\> Background/Sidepanel).
+Warstwa C: Produkt Komercyjny – Cargobloom Enterprise
+Rola: Główny model monetyzacji (SaaS).
 
-### Kluczowy Mechanizm: API Interception (Nie Scraping\!)
+Opis: Płatne, zamknięte instancje systemu dla dużych firm produkcyjnych i logistycznych.
 
-Nie parsujemy HTML (DOM). Wstrzykujemy skrypt (`injected.js`) do kontekstu strony (`MAIN world`), który nadpisuje natywną funkcję `window.fetch` oraz `XMLHttpRequest`.
-Dzięki temu przechwytujemy czyste obiekty JSON przychodzące z serwera Timocom, zanim zostaną wyrenderowane.
+Wartość dla Firmy: Pozwala na analizę własnych, historycznych danych firmy na tle zagregowanego rynku. Szefowie logistyki widzą, gdzie ich zespoły przepłacają, a spedytorzy mają dostęp do wewnętrznego benchmarku cenowego ("zamknięty Bloomberg firmowy").
 
-**Kluczowe Endpointy do przechwycenia:**
+4. Status Projektu i Trakcja (Current Traction)
+Projekt znajduje się w fazie zaawansowanego MVP (Minimum Viable Product), gotowego do wejścia na rynek.
 
-1.  `freight-search-offers` (Oferty ładunków/pojazdów).
-2.  `/api/currencies` (Słownik walut: ID -\> ISO Code).
-3.  `/api/vehicleproperties` (Słownik nadwozi: ID -\> Label Key).
-4.  `/api/translations` (Słownik tłumaczeń: Label Key -\> Tekst PL/EN).
+Technologia: W pełni funkcjonalny, profesjonalny frontend (interfejs użytkownika) z działającym mechanizmem "live update" danych. Strona wizualnie jest gotowa do publicznej prezentacji.
 
------
+Dane (Rozwiązanie problemu zimnego startu): Posiadamy początkowy, zweryfikowany zbiór danych (seed dataset) obejmujący ponad 12 000 rekordów transakcyjnych, co pozwala uniknąć efektu "pustej strony" na starcie.
 
-## 3\. Struktura Danych i Baza (Supabase)
+5. Strategia Wejścia na Rynek (Go-To-Market Roadmap)
+Nasza strategia opiera się na szybkim wdrożeniu i iteracji w oparciu o feedback zaufanej grupy użytkowników, a następnie organicznym skalowaniu.
 
-### 3.1. Magazyn Lokalny (Chrome Storage)
+Faza 1: Soft Launch / Inner Circle (Najbliższy tydzień)
 
-Do szybkiego działania UI, słowniki trzymamy lokalnie.
+Wdrożenie strony cargobloom.io na produkcję (z poprawionym nazewnictwem kolumn dostosowanym do B2B: usunięcie "Market Cap" na rzecz "Est. Route Value" / "Avg Rate").
 
-  * `storage.local.currencies`: Mapa `{ 3: "EUR", 21: "PLN" }`
-  * `storage.local.bodies`: Mapa `{ 68: "i18n...REFRIGERATOR" }`
-  * `storage.local.translations`: Mapa `{ "i18n...REFRIGERATOR": "Chłodnia" }`
+Dystrybucja wtyczki "Assistant" do zamkniętej grupy 5-10 zaufanych spedytorów (beta-testerów).
 
-### 3.2. Magazyn Centralny (Supabase SQL)
+Cel: Weryfikacja techniczna wtyczki i kalibracja jakości wyświetlanych danych (czy stawki są realne w oczach profesjonalistów).
 
-Do analityki globalnej wysyłamy surowe oferty.
+Faza 2: Publiczna Beta & Organiczny Wzrost (Miesiąc 1-2)
 
-```sql
--- Tabela: raw_offers
-CREATE TABLE raw_offers (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    original_id TEXT UNIQUE NOT NULL, -- ID z Timocom (Deduplikacja)
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
-    -- Finanse
-    price_amount NUMERIC,
-    currency_id INT,
-    
-    -- Trasa
-    distance_km NUMERIC,
-    origin_country TEXT, -- ISO Code
-    origin_zip TEXT,     -- Znormalizowany (np. pierwsze 2 cyfry)
-    dest_country TEXT,
-    dest_zip TEXT,
-    
-    -- Pojazd
-    vehicle_body_ids JSONB, -- Tablica ID, np. [68, 45]
-    
-    -- Pełny zrzut (dla bezpieczeństwa/przyszłej analizy)
-    full_payload JSONB
-);
+Upublicznienie strony z wyraźnym oznaczeniem "BETA".
 
--- Security
-ALTER TABLE raw_offers ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Enable insert for anon" ON raw_offers FOR INSERT WITH CHECK (true);
-```
+Agresywne promowanie wtyczki na stronie głównej poprzez strategiczne umiejscowienie CTA (Sticky Bar, Menu, Tooltipy w tabeli).
 
------
+Marketing organiczny na LinkedIn: publikowanie wykresów i trendów opartych na zbieranych danych w celu budowania autorytetu.
 
-## 4\. Logika Biznesowa (Algorytm Wyceny)
+Faza 3: Skalowanie i Monetyzacja (Miesiąc 3+)
 
-Agent nie może liczyć prostej średniej. Musi zastosować **Smart Filtering**:
-
-1.  **Sanityzacja:** Odrzuć oferty bez ceny (`amount === 0`).
-2.  **Outliers Removal (IQR):**
-      * Posortuj ceny.
-      * Wylicz Q1 (25%) i Q3 (75%).
-      * Odrzuć wszystko poniżej `Q1 - 1.5 * IQR` i powyżej `Q3 + 1.5 * IQR`.
-      * *Cel:* Usunięcie ofert "1 EUR" i "10 000 EUR".
-3.  **Wskaźnik Rynkowy:**
-      * Wylicz Medianę z pozostałych ofert.
-      * (Opcjonalnie w v2) EMA (Exponential Moving Average) dla wykrycia trendu.
-
------
-
-## 5\. Plan Implementacji (Krok po Kroku)
-
-### Faza 1: The Spy (Przechwytywanie Danych)
-
-1.  Skonfiguruj `manifest.json` (permissions: `scripting`, `storage`, `sidePanel`, host: `*.timocom.com`).
-2.  Stwórz `injected.js`, który robi Monkey Patch na `window.fetch`.
-3.  Zaimplementuj logikę wykrywania URLi:
-      * Jeśli URL zawiera `currencies` -\> wyślij event `DICT_CURRENCIES`.
-      * Jeśli URL zawiera `vehicleproperties` -\> wyślij event `DICT_BODIES`.
-      * Jeśli URL zawiera `translations` -\> wyślij event `DICT_TRANSLATIONS`.
-      * Jeśli URL zawiera `freight-search-offers` -\> wyślij event `OFFERS_DATA`.
-4.  Stwórz `content.js`, który nasłuchuje `window.onmessage` i przekazuje dane do `background.js`.
-
-### Faza 2: The Brain (Zarządzanie Stanem)
-
-1.  W `background.js` odbierz eventy słownikowe i zapisz je do `chrome.storage.local`.
-2.  W `background.js` skonfiguruj klienta Supabase (`@supabase/supabase-js`).
-3.  Po otrzymaniu `OFFERS_DATA`:
-      * Zapisz paczkę ofert do `chrome.storage.local` (dla UI).
-      * Wyślij asynchronicznie do Supabase (dla globalnej bazy).
-
-### Faza 3: The UI (Panel Boczny)
-
-1.  Stwórz `sidepanel.html` i `sidepanel.js`.
-2.  Zaimplementuj funkcję `enrichOffer(offer)`:
-      * Pobierz słowniki ze storage.
-      * Zamień `currencyId: 3` na "EUR".
-      * Zamień `bodyId: 68` na "Chłodnia" (używając łańcucha ID -\> Label -\> Translation).
-3.  Wyświetl listę ofert w Panelu.
-4.  Zaimplementuj logikę Mediany (z wycięciem Outlierów) i wyświetl "Sugerowaną Cenę" na górze panelu.
-
-### Faza 4: Action (Pół-Automatyzacja)
-
-1.  Dodaj przycisk przy wyliczonej cenie: "Kopiuj Ofertę".
-2.  Wygeneruj tekst do schowka: *"Dzień dobry, w nawiązaniu do oferty [TRASA], proponuję [CENA] EUR. Płatność 45 dni."*
-
------
-
-## 6\. Wytyczne dla AI Codera (Constraints)
-
-  * **BEZPIECZEŃSTWO:** Nie używaj żadnych metod automatycznego scrollowania, klikania w tle ani interwałów odpytujących serwer. Działamy tylko na eventach użytkownika (pasywnie).
-  * **WYDAJNOŚĆ:** Nie wysyłaj każdej oferty osobno do Supabase. Używaj `upsert` dla całej tablicy (batch).
-  * **DEPENDENCIES:** Używaj `supabase-js` z CDN lub lokalnego pliku, nie używaj bundlerów (Webpack/Vite) w MVP, trzymaj strukturę Vanilla JS dla czytelności.
-  * **BŁĘDY:** Zawsze używaj `.clone()` na Response w `fetch` interceptorze, aby nie zepsuć działania oryginalnej strony Timocom.
+Gdy napływ danych osiągnie masę krytyczną, rozpoczęcie sprzedaży bezpośredniej (outbound sales) wersji Enterprise do dużych załadowców i korporacji spedycyjnych.
