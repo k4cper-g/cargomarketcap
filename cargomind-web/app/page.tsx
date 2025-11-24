@@ -1,10 +1,11 @@
+import { Suspense } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import DashboardClient from './dashboard-client';
 import { RouteStat } from '@/lib/market-utils';
 
 export const revalidate = 60; // Revalidate every 60 seconds
 
-export default async function DashboardPage() {
+async function DashboardData() {
   const itemsPerPage = 50;
   const page = 1;
 
@@ -129,5 +130,13 @@ export default async function DashboardPage() {
       initialGlobalStats={initialGlobalStats}
       initialTotalCount={count || 0}
     />
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <DashboardData />
+    </Suspense>
   );
 }

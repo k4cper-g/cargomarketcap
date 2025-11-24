@@ -752,7 +752,6 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            console.log('Toggling watchlist:', route.origin_country, route.dest_country);
                                                             toggleWatchlist(route.origin_country, route.dest_country);
                                                         }}
                                                         className="p-1 hover:bg-muted rounded transition-colors"

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
+import { SupabaseClient } from '@supabase/supabase-js'
 import { useAuth } from '@/components/auth-provider'
 
 type WatchlistItem = {
@@ -19,15 +20,19 @@ type WatchlistContextType = {
 
 const WatchlistContext = createContext<WatchlistContextType | undefined>(undefined)
 
+function createSupabaseClient(): SupabaseClient | null {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!url || !key) return null
+    return createBrowserClient(url, key)
+}
+
 export function WatchlistProvider({ children }: { children: React.ReactNode }) {
     const { user, openAuthDialog } = useAuth()
     const [watchlist, setWatchlist] = useState<WatchlistItem[]>([])
     const [isLoading, setIsLoading] = useState(false)
 
-    const supabase = useMemo(() => createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    ), [])
+    const supabase = useMemo(() => createSupabaseClient(), [])
 
     // Fetch watchlist when user changes
     useEffect(() => {
@@ -39,7 +44,7 @@ export function WatchlistProvider({ children }: { children: React.ReactNode }) {
     }, [user])
 
     const fetchWatchlist = async () => {
-        if (!user) return
+        if (!user || !supabase) return
 
         setIsLoading(true)
         const { data, error } = await supabase
@@ -49,8 +54,6 @@ export function WatchlistProvider({ children }: { children: React.ReactNode }) {
 
         if (!error && data) {
             setWatchlist(data)
-        } else if (error) {
-            console.error('Error fetching watchlist:', JSON.stringify(error, null, 2))
         }
         setIsLoading(false)
     }
@@ -66,12 +69,11 @@ export function WatchlistProvider({ children }: { children: React.ReactNode }) {
     const toggleWatchlist = useCallback(async (origin: string, dest: string) => {
         // If not logged in, open auth dialog
         if (!user) {
-            console.log('User not logged in, opening auth dialog')
             openAuthDialog()
             return
         }
+        if (!supabase) return
 
-        console.log('Toggling watchlist item:', origin, dest)
         const existing = watchlist.find(
             item => item.origin_country === origin && item.dest_country === dest
         )
@@ -88,7 +90,6 @@ export function WatchlistProvider({ children }: { children: React.ReactNode }) {
                 .then(({ error }) => {
                     if (error) {
                         // Revert on error
-                        console.error('Error removing from watchlist:', error)
                         setWatchlist(prev => [...prev, existing])
                     }
                 })
@@ -117,7 +118,6 @@ export function WatchlistProvider({ children }: { children: React.ReactNode }) {
                 .then(({ data, error }) => {
                     if (error) {
                         // Revert on error
-                        console.error('Error adding to watchlist:', error)
                         setWatchlist(prev => prev.filter(item => item.id !== tempId))
                     } else if (data) {
                         // Replace temp item with real one
@@ -127,7 +127,7 @@ export function WatchlistProvider({ children }: { children: React.ReactNode }) {
                     }
                 })
         }
-    }, [user, watchlist, openAuthDialog])
+    }, [user, watchlist, openAuthDialog, supabase])
 
     return (
         <WatchlistContext.Provider value={{ watchlist, isLoading, isInWatchlist, toggleWatchlist }}>

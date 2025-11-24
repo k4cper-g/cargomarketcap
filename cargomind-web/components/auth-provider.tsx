@@ -1,8 +1,8 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import { Session, User } from '@supabase/supabase-js'
+import { Session, User, SupabaseClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import { AuthDialog } from '@/components/auth-dialog'
 
@@ -16,6 +16,13 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+function createSupabaseClient(): SupabaseClient | null {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!url || !key) return null
+    return createBrowserClient(url, key)
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [session, setSession] = useState<Session | null>(null)
@@ -23,12 +30,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [authDialogOpen, setAuthDialogOpen] = useState(false)
     const router = useRouter()
 
-    const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    const supabase = useMemo(() => createSupabaseClient(), [])
 
     useEffect(() => {
+        if (!supabase) {
+            setIsLoading(false)
+            return
+        }
+
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((event, session) => {
@@ -47,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, [router, supabase])
 
     const signOut = async () => {
+        if (!supabase) return
         await supabase.auth.signOut()
         router.refresh()
     }

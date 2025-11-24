@@ -12,7 +12,9 @@
       "Bash(scoop update:*)",
       "Bash(docker pull supabase/storage-api:v1.22.12)",
       "Bash(supabase stop:*)",
-      "Bash(supabase db dump:*)"
+      "Bash(supabase db dump:*)",
+      "Bash(cat:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []

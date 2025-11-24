@@ -1,13 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
+import { SupabaseClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2, Eye, EyeOff, CheckCircle2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+
+function createSupabaseClient(): SupabaseClient | null {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!url || !key) return null
+    return createBrowserClient(url, key)
+}
 
 export default function ResetPasswordPage() {
     const [password, setPassword] = useState('')
@@ -19,12 +27,11 @@ export default function ResetPasswordPage() {
     const [success, setSuccess] = useState(false)
     const router = useRouter()
 
-    const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    const supabase = useMemo(() => createSupabaseClient(), [])
 
     useEffect(() => {
+        if (!supabase) return
+
         // Check if we have the recovery token in the URL hash
         const hashParams = new URLSearchParams(window.location.hash.substring(1))
         const accessToken = hashParams.get('access_token')
@@ -34,11 +41,16 @@ export default function ResetPasswordPage() {
             // Supabase will handle the session automatically
             supabase.auth.getSession()
         }
-    }, [supabase.auth])
+    }, [supabase])
 
     const handleResetPassword = async (e: React.FormEvent) => {
         e.preventDefault()
         setError(null)
+
+        if (!supabase) {
+            setError('Authentication service unavailable')
+            return
+        }
 
         if (password !== confirmPassword) {
             setError('Passwords do not match')

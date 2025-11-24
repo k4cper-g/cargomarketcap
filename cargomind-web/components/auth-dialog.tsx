@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
+import { SupabaseClient } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +20,13 @@ interface AuthDialogProps {
     onOpenChange: (open: boolean) => void
 }
 
+function createSupabaseClient(): SupabaseClient | null {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!url || !key) return null
+    return createBrowserClient(url, key)
+}
+
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     const [mode, setMode] = useState<AuthMode>('login')
     const [email, setEmail] = useState('')
@@ -29,10 +37,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     const [success, setSuccess] = useState(false)
     const router = useRouter()
 
-    const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    const supabase = useMemo(() => createSupabaseClient(), [])
 
     const resetForm = () => {
         setEmail('')
@@ -58,6 +63,10 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
+        if (!supabase) {
+            setError('Authentication service unavailable')
+            return
+        }
         setLoading(true)
         setError(null)
 
@@ -82,6 +91,10 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
 
     const handleSignUp = async (e: React.FormEvent) => {
         e.preventDefault()
+        if (!supabase) {
+            setError('Authentication service unavailable')
+            return
+        }
         setLoading(true)
         setError(null)
 
@@ -107,6 +120,10 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     }
 
     const handleGoogleAuth = async () => {
+        if (!supabase) {
+            setError('Authentication service unavailable')
+            return
+        }
         setLoading(true)
         setError(null)
         try {
@@ -125,6 +142,10 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
 
     const handleForgotPassword = async (e: React.FormEvent) => {
         e.preventDefault()
+        if (!supabase) {
+            setError('Authentication service unavailable')
+            return
+        }
         setLoading(true)
         setError(null)
 
