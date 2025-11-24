@@ -13,42 +13,13 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 
+CREATE SCHEMA IF NOT EXISTS "public";
+
+
+ALTER SCHEMA "public" OWNER TO "pg_database_owner";
+
+
 COMMENT ON SCHEMA "public" IS 'standard public schema';
-
-
-
-CREATE EXTENSION IF NOT EXISTS "pg_graphql" WITH SCHEMA "graphql";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
-
-
-
 
 
 
@@ -119,6 +90,76 @@ $$;
 ALTER FUNCTION "public"."get_offer_codes"("vehicle_ids" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."refresh_route_metrics"("_origin" "text", "_dest" "text", "_group" "text", "_source" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+    _vol_24h numeric;
+    _vol_7d numeric;
+BEGIN
+    -- Calculate 24h Volume
+    SELECT COALESCE(SUM(total_price_amount), 0)
+    INTO _vol_24h
+    FROM hourly_market_stats
+    WHERE origin_country = _origin
+      AND dest_country = _dest
+      AND body_group = _group
+      AND source = _source
+      AND stat_hour > (NOW() - INTERVAL '24 hours');
+
+    -- Calculate 7d Volume for Market Cap
+    SELECT COALESCE(SUM(total_price_amount), 0)
+    INTO _vol_7d
+    FROM daily_market_stats
+    WHERE origin_country = _origin
+      AND dest_country = _dest
+      AND body_group = _group
+      AND source = _source
+      AND stat_date >= (CURRENT_DATE - INTERVAL '7 days');
+
+    -- Update Route Stats
+    UPDATE route_stats
+    SET 
+        volume_24h = _vol_24h,
+        market_cap = _vol_7d * 52,
+        last_updated = NOW()
+    WHERE origin_country = _origin
+      AND dest_country = _dest
+      AND body_group = _group
+      AND source = _source;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."refresh_route_metrics"("_origin" "text", "_dest" "text", "_group" "text", "_source" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."trigger_refresh_metrics_daily"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    PERFORM refresh_route_metrics(NEW.origin_country, NEW.dest_country, NEW.body_group, NEW.source);
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."trigger_refresh_metrics_daily"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."trigger_refresh_metrics_hourly"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+    PERFORM refresh_route_metrics(NEW.origin_country, NEW.dest_country, NEW.body_group, NEW.source);
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."trigger_refresh_metrics_hourly"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."update_daily_stats"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -183,6 +224,8 @@ DECLARE
     _date DATE;
     _origin_code TEXT;
     _dest_code TEXT;
+    _sources TEXT[];
+    _src TEXT;
 BEGIN
     IF NEW.distance_km > 0 AND NEW.price_amount > 0 THEN
         _rate := NEW.price_amount / NEW.distance_km;
@@ -193,33 +236,40 @@ BEGIN
         _origin_code := get_country_code(NEW.origin_country);
         _dest_code := get_country_code(NEW.dest_country);
 
+        -- Prepare sources: specific source AND 'ALL'
+        _sources := ARRAY[COALESCE(NEW.source, 'UNKNOWN'), 'ALL'];
+
         IF _rate >= 0.2 AND _rate <= 10.0 THEN
-            FOREACH _code IN ARRAY _target_codes
+            FOREACH _src IN ARRAY _sources
             LOOP
-                INSERT INTO daily_market_stats (
-                    stat_date, origin_country, dest_country, body_group,
-                    total_price_amount, total_distance_km, offer_count,
-                    min_rate_per_km, max_rate_per_km, last_updated
-                )
-                VALUES (
-                    _date,
-                    _origin_code, 
-                    _dest_code, 
-                    _code,
-                    NEW.price_amount,
-                    NEW.distance_km,
-                    1,
-                    _rate, _rate,
-                    NOW()
-                )
-                ON CONFLICT (stat_date, origin_country, dest_country, body_group)
-                DO UPDATE SET
-                    total_price_amount = daily_market_stats.total_price_amount + EXCLUDED.total_price_amount,
-                    total_distance_km = daily_market_stats.total_distance_km + EXCLUDED.total_distance_km,
-                    offer_count = daily_market_stats.offer_count + 1,
-                    min_rate_per_km = LEAST(daily_market_stats.min_rate_per_km, EXCLUDED.min_rate_per_km),
-                    max_rate_per_km = GREATEST(daily_market_stats.max_rate_per_km, EXCLUDED.max_rate_per_km),
-                    last_updated = NOW();
+                FOREACH _code IN ARRAY _target_codes
+                LOOP
+                    INSERT INTO daily_market_stats (
+                        stat_date, origin_country, dest_country, body_group, source,
+                        total_price_amount, total_distance_km, offer_count,
+                        min_rate_per_km, max_rate_per_km, last_updated
+                    )
+                    VALUES (
+                        _date,
+                        _origin_code, 
+                        _dest_code, 
+                        _code,
+                        _src,
+                        NEW.price_amount,
+                        NEW.distance_km,
+                        1,
+                        _rate, _rate,
+                        NOW()
+                    )
+                    ON CONFLICT (stat_date, origin_country, dest_country, body_group, source)
+                    DO UPDATE SET
+                        total_price_amount = daily_market_stats.total_price_amount + EXCLUDED.total_price_amount,
+                        total_distance_km = daily_market_stats.total_distance_km + EXCLUDED.total_distance_km,
+                        offer_count = daily_market_stats.offer_count + 1,
+                        min_rate_per_km = LEAST(daily_market_stats.min_rate_per_km, EXCLUDED.min_rate_per_km),
+                        max_rate_per_km = GREATEST(daily_market_stats.max_rate_per_km, EXCLUDED.max_rate_per_km),
+                        last_updated = NOW();
+                END LOOP;
             END LOOP;
         END IF;
     END IF;
@@ -241,6 +291,8 @@ DECLARE
     _hour TIMESTAMP WITH TIME ZONE;
     _origin_code TEXT;
     _dest_code TEXT;
+    _sources TEXT[];
+    _src TEXT;
 BEGIN
     IF NEW.distance_km > 0 AND NEW.price_amount > 0 THEN
         _rate := NEW.price_amount / NEW.distance_km;
@@ -252,33 +304,40 @@ BEGIN
         _origin_code := get_country_code(NEW.origin_country);
         _dest_code := get_country_code(NEW.dest_country);
 
+        -- Prepare sources
+        _sources := ARRAY[COALESCE(NEW.source, 'UNKNOWN'), 'ALL'];
+
         IF _rate >= 0.2 AND _rate <= 10.0 THEN
-            FOREACH _code IN ARRAY _target_codes
+            FOREACH _src IN ARRAY _sources
             LOOP
-                INSERT INTO hourly_market_stats (
-                    stat_hour, origin_country, dest_country, body_group,
-                    total_price_amount, total_distance_km, offer_count,
-                    min_rate_per_km, max_rate_per_km, last_updated
-                )
-                VALUES (
-                    _hour,
-                    _origin_code, 
-                    _dest_code, 
-                    _code,
-                    NEW.price_amount,
-                    NEW.distance_km,
-                    1,
-                    _rate, _rate,
-                    NOW()
-                )
-                ON CONFLICT (stat_hour, origin_country, dest_country, body_group)
-                DO UPDATE SET
-                    total_price_amount = hourly_market_stats.total_price_amount + EXCLUDED.total_price_amount,
-                    total_distance_km = hourly_market_stats.total_distance_km + EXCLUDED.total_distance_km,
-                    offer_count = hourly_market_stats.offer_count + 1,
-                    min_rate_per_km = LEAST(hourly_market_stats.min_rate_per_km, EXCLUDED.min_rate_per_km),
-                    max_rate_per_km = GREATEST(hourly_market_stats.max_rate_per_km, EXCLUDED.max_rate_per_km),
-                    last_updated = NOW();
+                FOREACH _code IN ARRAY _target_codes
+                LOOP
+                    INSERT INTO hourly_market_stats (
+                        stat_hour, origin_country, dest_country, body_group, source,
+                        total_price_amount, total_distance_km, offer_count,
+                        min_rate_per_km, max_rate_per_km, last_updated
+                    )
+                    VALUES (
+                        _hour,
+                        _origin_code, 
+                        _dest_code, 
+                        _code,
+                        _src,
+                        NEW.price_amount,
+                        NEW.distance_km,
+                        1,
+                        _rate, _rate,
+                        NOW()
+                    )
+                    ON CONFLICT (stat_hour, origin_country, dest_country, body_group, source)
+                    DO UPDATE SET
+                        total_price_amount = hourly_market_stats.total_price_amount + EXCLUDED.total_price_amount,
+                        total_distance_km = hourly_market_stats.total_distance_km + EXCLUDED.total_distance_km,
+                        offer_count = hourly_market_stats.offer_count + 1,
+                        min_rate_per_km = LEAST(hourly_market_stats.min_rate_per_km, EXCLUDED.min_rate_per_km),
+                        max_rate_per_km = GREATEST(hourly_market_stats.max_rate_per_km, EXCLUDED.max_rate_per_km),
+                        last_updated = NOW();
+                END LOOP;
             END LOOP;
         END IF;
     END IF;
@@ -316,6 +375,8 @@ DECLARE
     _code TEXT;
     _origin_code TEXT;
     _dest_code TEXT;
+    _sources TEXT[];
+    _src TEXT;
 BEGIN
     IF NEW.distance_km > 0 AND NEW.price_amount > 0 THEN
         _rate := NEW.price_amount / NEW.distance_km;
@@ -326,22 +387,29 @@ BEGIN
         _origin_code := get_country_code(NEW.origin_country);
         _dest_code := get_country_code(NEW.dest_country);
         
+        -- Prepare sources
+        _sources := ARRAY[COALESCE(NEW.source, 'UNKNOWN'), 'ALL'];
+
         IF _rate >= 0.2 AND _rate <= 10.0 THEN
-            FOREACH _code IN ARRAY _target_codes
+            FOREACH _src IN ARRAY _sources
             LOOP
-                INSERT INTO route_stats (origin_country, dest_country, body_group, avg_rate_per_km, ema_rate_per_km, offers_count, last_updated)
-                VALUES (
-                    _origin_code, 
-                    _dest_code, 
-                    _code,
-                    _rate, _rate, 1, NOW()
-                )
-                ON CONFLICT (origin_country, dest_country, body_group)
-                DO UPDATE SET
-                    ema_rate_per_km = route_stats.ema_rate_per_km + _alpha * (_rate - route_stats.ema_rate_per_km),
-                    avg_rate_per_km = (route_stats.avg_rate_per_km * route_stats.offers_count + _rate) / (route_stats.offers_count + 1),
-                    offers_count = route_stats.offers_count + 1,
-                    last_updated = NOW();
+                FOREACH _code IN ARRAY _target_codes
+                LOOP
+                    INSERT INTO route_stats (origin_country, dest_country, body_group, source, avg_rate_per_km, ema_rate_per_km, offers_count, last_updated)
+                    VALUES (
+                        _origin_code, 
+                        _dest_code, 
+                        _code,
+                        _src,
+                        _rate, _rate, 1, NOW()
+                    )
+                    ON CONFLICT (origin_country, dest_country, body_group, source)
+                    DO UPDATE SET
+                        ema_rate_per_km = route_stats.ema_rate_per_km + _alpha * (_rate - route_stats.ema_rate_per_km),
+                        avg_rate_per_km = (route_stats.avg_rate_per_km * route_stats.offers_count + _rate) / (route_stats.offers_count + 1),
+                        offers_count = route_stats.offers_count + 1,
+                        last_updated = NOW();
+                END LOOP;
             END LOOP;
         END IF;
     END IF;
@@ -368,7 +436,8 @@ CREATE TABLE IF NOT EXISTS "public"."daily_market_stats" (
     "offer_count" integer DEFAULT 0,
     "min_rate_per_km" numeric DEFAULT 999,
     "max_rate_per_km" numeric DEFAULT 0,
-    "last_updated" timestamp with time zone DEFAULT "now"()
+    "last_updated" timestamp with time zone DEFAULT "now"(),
+    "source" "text" DEFAULT 'ALL'::"text" NOT NULL
 );
 
 
@@ -391,7 +460,7 @@ CREATE OR REPLACE VIEW "public"."analytics_trend_7d" AS
     ("sum"("total_price_amount") / NULLIF("sum"("total_distance_km"), (0)::numeric)) AS "rate_7d_avg",
     "sum"("offer_count") AS "volume_7d"
    FROM "public"."daily_market_stats"
-  WHERE ("stat_date" >= (CURRENT_DATE - '7 days'::interval))
+  WHERE (("stat_date" >= (CURRENT_DATE - '7 days'::interval)) AND ("source" = 'ALL'::"text"))
   GROUP BY "origin_country", "dest_country", "body_group"
  HAVING ("sum"("offer_count") > 5);
 
@@ -429,7 +498,8 @@ CASE
     WHEN ("total_distance_km" > (0)::numeric) THEN ("total_price_amount" / "total_distance_km")
     ELSE (0)::numeric
 END) STORED,
-    "last_updated" timestamp with time zone DEFAULT "now"()
+    "last_updated" timestamp with time zone DEFAULT "now"(),
+    "source" "text" DEFAULT 'ALL'::"text" NOT NULL
 );
 
 
@@ -444,7 +514,10 @@ CREATE TABLE IF NOT EXISTS "public"."route_stats" (
     "ema_rate_per_km" numeric DEFAULT 0,
     "last_updated" timestamp with time zone DEFAULT "now"(),
     "offers_count" integer DEFAULT 0,
-    "body_group" "text" DEFAULT 'GENERAL'::"text"
+    "body_group" "text" DEFAULT 'GENERAL'::"text",
+    "source" "text" DEFAULT 'ALL'::"text" NOT NULL,
+    "volume_24h" numeric DEFAULT 0,
+    "market_cap" numeric DEFAULT 0
 );
 
 
@@ -459,7 +532,7 @@ CREATE OR REPLACE VIEW "public"."live_market_snapshot" AS
     "offers_count" AS "volume",
     "last_updated" AS "last_seen"
    FROM "public"."route_stats"
-  WHERE ("last_updated" > ("now"() - '48:00:00'::interval));
+  WHERE (("last_updated" > ("now"() - '48:00:00'::interval)) AND ("source" = 'ALL'::"text"));
 
 
 ALTER VIEW "public"."live_market_snapshot" OWNER TO "postgres";
@@ -485,13 +558,25 @@ CREATE TABLE IF NOT EXISTS "public"."raw_offers" (
 ALTER TABLE "public"."raw_offers" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."watchlist" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" DEFAULT "auth"."uid"() NOT NULL,
+    "origin_country" "text" NOT NULL,
+    "dest_country" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL
+);
+
+
+ALTER TABLE "public"."watchlist" OWNER TO "postgres";
+
+
 ALTER TABLE ONLY "public"."daily_market_stats"
     ADD CONSTRAINT "daily_market_stats_pkey" PRIMARY KEY ("id");
 
 
 
 ALTER TABLE ONLY "public"."daily_market_stats"
-    ADD CONSTRAINT "daily_market_stats_stat_date_origin_country_dest_country_bo_key" UNIQUE ("stat_date", "origin_country", "dest_country", "body_group");
+    ADD CONSTRAINT "daily_market_stats_unique_key" UNIQUE ("stat_date", "origin_country", "dest_country", "body_group", "source");
 
 
 
@@ -511,7 +596,7 @@ ALTER TABLE ONLY "public"."hourly_market_stats"
 
 
 ALTER TABLE ONLY "public"."hourly_market_stats"
-    ADD CONSTRAINT "hourly_market_stats_unique_key" UNIQUE ("stat_hour", "origin_country", "dest_country", "body_group");
+    ADD CONSTRAINT "hourly_market_stats_unique_key" UNIQUE ("stat_hour", "origin_country", "dest_country", "body_group", "source");
 
 
 
@@ -531,7 +616,21 @@ ALTER TABLE ONLY "public"."route_stats"
 
 
 ALTER TABLE ONLY "public"."route_stats"
-    ADD CONSTRAINT "route_stats_unique_group" UNIQUE ("origin_country", "dest_country", "body_group");
+    ADD CONSTRAINT "route_stats_unique_group" UNIQUE ("origin_country", "dest_country", "body_group", "source");
+
+
+
+ALTER TABLE ONLY "public"."watchlist"
+    ADD CONSTRAINT "watchlist_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."watchlist"
+    ADD CONSTRAINT "watchlist_user_id_origin_country_dest_country_key" UNIQUE ("user_id", "origin_country", "dest_country");
+
+
+
+CREATE INDEX "idx_hourly_stats_lookup" ON "public"."hourly_market_stats" USING "btree" ("origin_country", "dest_country", "body_group", "source", "stat_hour" DESC);
 
 
 
@@ -548,6 +647,11 @@ CREATE OR REPLACE TRIGGER "on_offer_insert_daily" AFTER INSERT ON "public"."raw_
 
 
 CREATE OR REPLACE TRIGGER "on_offer_insert_hourly" AFTER INSERT ON "public"."raw_offers" FOR EACH ROW EXECUTE FUNCTION "public"."update_hourly_stats_detailed"();
+
+
+
+ALTER TABLE ONLY "public"."watchlist"
+    ADD CONSTRAINT "watchlist_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id");
 
 
 
@@ -575,6 +679,18 @@ CREATE POLICY "Enable all for anon" ON "public"."route_stats" TO "anon" USING (t
 
 
 
+CREATE POLICY "Users can delete from their own watchlist" ON "public"."watchlist" FOR DELETE USING (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can insert into their own watchlist" ON "public"."watchlist" FOR INSERT WITH CHECK (("auth"."uid"() = "user_id"));
+
+
+
+CREATE POLICY "Users can view their own watchlist" ON "public"."watchlist" FOR SELECT USING (("auth"."uid"() = "user_id"));
+
+
+
 ALTER TABLE "public"."daily_market_stats" ENABLE ROW LEVEL SECURITY;
 
 
@@ -590,165 +706,13 @@ ALTER TABLE "public"."raw_offers" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."route_stats" ENABLE ROW LEVEL SECURITY;
 
 
-
-
-ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
+ALTER TABLE "public"."watchlist" ENABLE ROW LEVEL SECURITY;
 
 
 GRANT USAGE ON SCHEMA "public" TO "postgres";
 GRANT USAGE ON SCHEMA "public" TO "anon";
 GRANT USAGE ON SCHEMA "public" TO "authenticated";
 GRANT USAGE ON SCHEMA "public" TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -767,6 +731,24 @@ GRANT ALL ON FUNCTION "public"."get_country_code"("input_val" "text") TO "servic
 GRANT ALL ON FUNCTION "public"."get_offer_codes"("vehicle_ids" "jsonb") TO "anon";
 GRANT ALL ON FUNCTION "public"."get_offer_codes"("vehicle_ids" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_offer_codes"("vehicle_ids" "jsonb") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."refresh_route_metrics"("_origin" "text", "_dest" "text", "_group" "text", "_source" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."refresh_route_metrics"("_origin" "text", "_dest" "text", "_group" "text", "_source" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."refresh_route_metrics"("_origin" "text", "_dest" "text", "_group" "text", "_source" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."trigger_refresh_metrics_daily"() TO "anon";
+GRANT ALL ON FUNCTION "public"."trigger_refresh_metrics_daily"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."trigger_refresh_metrics_daily"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."trigger_refresh_metrics_hourly"() TO "anon";
+GRANT ALL ON FUNCTION "public"."trigger_refresh_metrics_hourly"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."trigger_refresh_metrics_hourly"() TO "service_role";
 
 
 
@@ -797,21 +779,6 @@ GRANT ALL ON FUNCTION "public"."update_route_stats"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."update_route_stats_detailed"() TO "anon";
 GRANT ALL ON FUNCTION "public"."update_route_stats_detailed"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."update_route_stats_detailed"() TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -857,9 +824,9 @@ GRANT ALL ON TABLE "public"."raw_offers" TO "service_role";
 
 
 
-
-
-
+GRANT ALL ON TABLE "public"."watchlist" TO "anon";
+GRANT ALL ON TABLE "public"."watchlist" TO "authenticated";
+GRANT ALL ON TABLE "public"."watchlist" TO "service_role";
 
 
 
@@ -887,30 +854,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "authenticated";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

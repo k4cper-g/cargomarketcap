@@ -2,13 +2,23 @@
   "permissions": {
     "allow": [
       "Bash(npm run build:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find:*)",
+      "Bash(supabase start:*)",
+      "Bash(npm update:*)",
+      "Bash(supabase --version:*)",
+      "Bash(scoop bucket add:*)",
+      "Bash(scoop install:*)",
+      "Bash(scoop update:*)",
+      "Bash(docker pull supabase/storage-api:v1.22.12)",
+      "Bash(supabase stop:*)",
+      "Bash(supabase db dump:*)"
     ],
     "deny": [],
     "ask": []
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "shadcn"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }
