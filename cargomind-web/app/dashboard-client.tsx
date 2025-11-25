@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Line, LineChart, ResponsiveContainer } from "recharts"
 import { ArrowUp, Search, Star, MoreHorizontal, ChevronDown, ChevronUp, ArrowRight, ChevronLeft, ChevronRight, TrendingDown, TrendingUp, ArrowLeftRight, MessageCircle, BarChart2, Loader2, Filter, Columns } from 'lucide-react';
+import Link from 'next/link';
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -537,47 +538,61 @@ export default function DashboardClient({ initialData, initialGlobalStats, initi
                         onScroll={checkScroll}
                         className="flex gap-3 overflow-x-auto py-1 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide items-center"
                     >
-                        {/* Topic Item */}
-                        <div className="flex-shrink-0 bg-[#FFF8E5] hover:bg-[#FFF0C9] dark:bg-yellow-900/20 dark:hover:bg-yellow-900/30 dark:border-yellow-700/50 text-foreground text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-[#FAE0A8] transition-colors">
-                            <span className="bg-[#F5A524] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">Topic</span>
-                            <span>Mobility Package: Enforcement News</span>
-                        </div>
+                        {/* Global Shipping Rates Forecast */}
+                        <Link href="/articles/global-shipping-rates-forecast-2025">
+                            <div className="flex-shrink-0 bg-[#FFF8E5] hover:bg-[#FFF0C9] dark:bg-yellow-900/20 dark:hover:bg-yellow-900/30 dark:border-yellow-700/50 text-foreground text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-[#FAE0A8] transition-colors">
+                                <span className="bg-[#F5A524] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-sm">Forecast</span>
+                                <span>Global Shipping Rates 2025</span>
+                            </div>
+                        </Link>
 
-                        {/* Fire Item */}
-                        <div className="flex-shrink-0 bg-[#FFF8E5] hover:bg-[#FFF0C9] dark:bg-yellow-900/20 dark:hover:bg-yellow-900/30 dark:border-yellow-700/50 text-foreground text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-[#FAE0A8] transition-colors">
-                            <span className="text-orange-500 text-sm">🔥</span>
-                            <span>High Demand: ES → DE Refrigerated</span>
-                        </div>
+                        {/* Port of Los Angeles Record Volume */}
+                        <Link href="/articles/port-of-los-angeles-record-volume">
+                            <div className="flex-shrink-0 bg-[#FFF8E5] hover:bg-[#FFF0C9] dark:bg-yellow-900/20 dark:hover:bg-yellow-900/30 dark:border-yellow-700/50 text-foreground text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-[#FAE0A8] transition-colors">
+                                <span className="text-orange-500 text-sm">🔥</span>
+                                <span>LA Port Record Volume</span>
+                            </div>
+                        </Link>
 
-                        {/* Down Trend */}
-                        <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
-                            <TrendingDown className="w-3 h-3 text-red-500" />
-                            <span>Why are UK export rates dropping?</span>
-                        </div>
+                        {/* IMO Sustainability Regulations */}
+                        <Link href="/articles/imo-sustainability-regulations">
+                            <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                                <TrendingDown className="w-3 h-3 text-red-500" />
+                                <span>IMO Fuel Cost Impact</span>
+                            </div>
+                        </Link>
 
-                        {/* Comparison */}
-                        <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
-                            <ArrowLeftRight className="w-3 h-3 text-blue-500" />
-                            <span>Spot vs Contract: Q4 Outlook</span>
-                        </div>
+                        {/* Air Freight Demand Surges */}
+                        <Link href="/articles/air-freight-demand-surges">
+                            <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                                <TrendingUp className="w-3 h-3 text-green-600" />
+                                <span>Air Freight Demand Surges</span>
+                            </div>
+                        </Link>
 
-                        {/* Trending */}
-                        <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
-                            <TrendingUp className="w-3 h-3 text-green-600" />
-                            <span>Bullish momentum in Poland</span>
-                        </div>
+                        {/* AI in Supply Chain */}
+                        <Link href="/articles/ai-supply-chain-management">
+                            <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                                <MessageCircle className="w-3 h-3 text-indigo-500" />
+                                <span>AI in Supply Chain</span>
+                            </div>
+                        </Link>
 
-                        {/* Narratives */}
-                        <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
-                            <MessageCircle className="w-3 h-3 text-indigo-500" />
-                            <span>What are the trending narratives?</span>
-                        </div>
+                        {/* Trucking Driver Shortage */}
+                        <Link href="/articles/trucking-driver-shortage">
+                            <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                                <ArrowLeftRight className="w-3 h-3 text-blue-500" />
+                                <span>Trucking Driver Shortage</span>
+                            </div>
+                        </Link>
 
-                        {/* Analysis */}
-                        <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
-                            <BarChart2 className="w-3 h-3 text-orange-500" />
-                            <span>Q4 2024 Freight Volume Forecast</span>
-                        </div>
+                        {/* Digital Freight Forwarding */}
+                        <Link href="/articles/digital-freight-forwarding">
+                            <div className="flex-shrink-0 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-xs font-medium px-3 py-1.5 rounded-full cursor-pointer flex items-center gap-2 border border-blue-100 transition-colors">
+                                <BarChart2 className="w-3 h-3 text-orange-500" />
+                                <span>Digital Freight Forwarding</span>
+                            </div>
+                        </Link>
                     </div>
 
                     {showRightScroll && (

@@ -167,3 +167,19 @@ export function getArticleBySlug(slug: string): Article | undefined {
 export function getRelatedArticles(currentSlug: string, limit: number = 3): Article[] {
     return ARTICLES.filter((article) => article.slug !== currentSlug).slice(0, limit)
 }
+
+export function getArticlesByTag(tag: string): Article[] {
+    return ARTICLES.filter(article =>
+        article.tags.some(t => t.toLowerCase() === tag.toLowerCase())
+    )
+}
+
+export function getArticlesByKeyword(keyword: string): Article[] {
+    const lowerKeyword = keyword.toLowerCase()
+    return ARTICLES.filter(article =>
+        article.keywords.some(k => k.toLowerCase().includes(lowerKeyword)) ||
+        article.tags.some(t => t.toLowerCase().includes(lowerKeyword)) ||
+        article.title.toLowerCase().includes(lowerKeyword) ||
+        article.summary.toLowerCase().includes(lowerKeyword)
+    )
+}
