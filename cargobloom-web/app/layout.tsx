@@ -9,7 +9,7 @@ import { WatchlistProvider } from "@/components/watchlist-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "CargoMarketCap",
+  title: "Cargo Prices, Analytics & Market Intelligence | CargoBloom",
   description: "Freight market intelligence and analytics",
 };
 

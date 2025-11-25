@@ -11,7 +11,9 @@ import { Loader2, Eye, EyeOff } from 'lucide-react'
 import {
     Dialog,
     DialogContent,
+    DialogTitle,
 } from '@/components/ui/dialog'
+import * as VisuallyHidden from '@radix-ui/react-visually-hidden'
 
 type AuthMode = 'login' | 'signup' | 'forgot'
 
@@ -170,6 +172,9 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
         return (
             <Dialog open={open} onOpenChange={handleOpenChange}>
                 <DialogContent className="sm:max-w-[400px] p-0 gap-0 overflow-hidden">
+                    <VisuallyHidden.Root>
+                        <DialogTitle>Email Confirmation</DialogTitle>
+                    </VisuallyHidden.Root>
                     <div className="p-6 text-center">
                         <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
                             <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -197,6 +202,11 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent className="sm:max-w-[400px] p-0 gap-0 overflow-hidden">
+                <VisuallyHidden.Root>
+                    <DialogTitle>
+                        {mode === 'forgot' ? 'Reset Password' : mode === 'login' ? 'Log In' : 'Sign Up'}
+                    </DialogTitle>
+                </VisuallyHidden.Root>
                 {/* Header */}
                 <div className="flex flex-col items-center pt-8 pb-4">
                     {mode === 'forgot' ? (

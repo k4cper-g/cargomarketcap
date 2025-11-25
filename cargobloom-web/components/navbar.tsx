@@ -24,10 +24,10 @@ export function Navbar() {
       <div className="flex h-16 items-center px-4 md:px-8 max-w-[1600px] mx-auto">
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2 font-bold text-xl mr-4">
-            <div className="relative w-8 h-8">
-              <Image src="/cargomarketcap.png" alt="CargoMarketCap Logo" fill className="object-contain" />
+            <div className="relative h-8 w-auto">
+              <Image src="/cargobloom-logo-light.svg" alt="CargoBloom Logo" height={32} width={150} className="object-contain dark:hidden" />
+              <Image src="/cargobloom-logo-dark.svg" alt="CargoBloom Logo" height={32} width={150} className="object-contain hidden dark:block" />
             </div>
-            <span>CargoMarketCap</span>
           </Link>
 
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-muted-foreground">
@@ -52,7 +52,7 @@ export function Navbar() {
           </div>
 
           <div className="flex items-center gap-2">
-            <a href="https://chromewebstore.google.com/detail/cargomind/hpkljbmcpdhmhhpbfmdodpddgapobfin" target="_blank" rel="noopener noreferrer">
+            <a href="https://chromewebstore.google.com/detail/cargobloom/hpkljbmcpdhmhhpbfmdodpddgapobfin" target="_blank" rel="noopener noreferrer">
               <Button variant="outline" size="sm" className="hidden sm:flex gap-2 font-medium">
                 <Image src="https://upload.wikimedia.org/wikipedia/commons/e/e1/Google_Chrome_icon_%28February_2022%29.svg" alt="Chrome" width={16} height={16} />
                 Download

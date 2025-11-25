@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: ArticlePageProps): Promise<Me
     }
 
     return {
-        title: `${article.title} | CargoMarketCap`,
+        title: `${article.title} | CargoBloom`,
         description: article.metaDescription,
         keywords: article.keywords,
         openGraph: {
