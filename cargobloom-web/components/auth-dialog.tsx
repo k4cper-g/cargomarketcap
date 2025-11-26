@@ -222,8 +222,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                                 type="button"
                                 onClick={() => switchMode('login')}
                                 className={`text-xl font-bold transition-colors relative pb-2 ${mode === 'login'
-                                        ? 'text-foreground'
-                                        : 'text-muted-foreground hover:text-foreground'
+                                    ? 'text-foreground'
+                                    : 'text-muted-foreground hover:text-foreground'
                                     }`}
                             >
                                 Log In
@@ -235,8 +235,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
                                 type="button"
                                 onClick={() => switchMode('signup')}
                                 className={`text-xl font-bold transition-colors relative pb-2 ${mode === 'signup'
-                                        ? 'text-foreground'
-                                        : 'text-muted-foreground hover:text-foreground'
+                                    ? 'text-foreground'
+                                    : 'text-muted-foreground hover:text-foreground'
                                     }`}
                             >
                                 Sign Up

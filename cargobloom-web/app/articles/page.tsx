@@ -6,6 +6,11 @@ import { ArrowRight, X } from "lucide-react"
 import { ARTICLES, getArticlesByTag, getArticlesByKeyword } from "@/lib/articles-data"
 import Link from "next/link"
 
+export const metadata = {
+    title: "Read the latest market insights and logistics news",
+    description: "Market Insights & Logistics News",
+};
+
 export default async function ArticlesPage({
     searchParams,
 }: {
@@ -59,29 +64,8 @@ export default async function ArticlesPage({
                             </div>
                         )}
                     </div>
-                    {!isFiltered && (
-                        <Button variant="ghost" className="gap-2">
-                            View All News <ArrowRight className="h-4 w-4" />
-                        </Button>
-                    )}
-                    {isFiltered && (
-                        <Link href="/articles">
-                            <Button variant="outline" className="gap-2">
-                                Clear Filter
-                            </Button>
-                        </Link>
-                    )}
-                </div>
 
-                {/* No Results Message */}
-                {isFiltered && !hasResults && (
-                    <div className="text-center py-16">
-                        <p className="text-lg text-muted-foreground mb-4">No articles found for "{filterLabel}"</p>
-                        <Link href="/articles">
-                            <Button>View All Articles</Button>
-                        </Link>
-                    </div>
-                )}
+                </div>
 
                 {/* Articles Display */}
                 {hasResults && (

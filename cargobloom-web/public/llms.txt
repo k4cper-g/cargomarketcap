@@ -1,0 +1,27 @@
+# CargoBloom: Freight Market Intelligence & Analytics
+
+## Project Overview
+CargoBloom is a data-driven ecosystem for the logistics industry, designed to bring financial market-level transparency to freight transport. Often referred to as the "Bloomberg for logistics," it replaces guesswork with precise, real-time market data.
+
+## Core Mission
+To democratize access to logistics data, enabling freight forwarders, shippers, and transport companies to benchmark rates, analyze trends, and optimize their margins.
+
+## Key Features
+- **Real-Time Freight Rates**: Live average market rates for thousands of European transport routes (e.g., Warsaw to Berlin, Madrid to Paris).
+- **Market Trends**: Historical data analysis showing price fluctuations over 24 hours, 7 days, and longer periods.
+- **Crowdsourced Data**: Unique data collection model using a Chrome extension utility that aggregates anonymized offer data from major freight exchanges.
+- **Vehicle Specifics**: Granular data filtering by vehicle body type (Curtain, Box, Frigo, etc.).
+- **Watchlist**: Personalized dashboard to monitor critical routes.
+- **Products**: Products and services available for purchase.
+- **Articles**: Articles and blog posts about the logistics industry.
+
+## Target Audience
+- **Freight Forwarders**: For benchmarking spot rates and negotiation.
+- **Logistics Managers**: For analyzing long-term transport costs and budget planning.
+- **Carriers**: For understanding market demand and pricing their services competitively.
+
+## Links
+- **Main Dashboard**: https://cargobloom.io
+- **Watchlist**: https://cargobloom.io/watchlist
+- **Products**: https://cargobloom.io/products
+- **Articles**: https://cargobloom.io/articles

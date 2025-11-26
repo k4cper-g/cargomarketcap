@@ -1,11 +1,12 @@
 'use client';
 
 import { Suspense } from 'react';
+import { Loader2 } from 'lucide-react';
 import DashboardClient from '../dashboard-client';
 
 export default function WatchlistPage() {
     return (
-        <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
             <DashboardClient
                 initialData={[]}
                 initialGlobalStats={{

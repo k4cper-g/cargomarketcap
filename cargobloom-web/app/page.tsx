@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import { Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import DashboardClient from './dashboard-client';
 import { RouteStat } from '@/lib/market-utils';
@@ -20,21 +21,21 @@ async function DashboardData() {
 
   // Fetch daily stats for global stats calculation
   const { data: dailyStats } = await supabase
-      .from('daily_market_stats')
-      .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count, source')
-      .eq('body_group', 'ALL')
-      .eq('source', 'ALL')
-      .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
-      .order('stat_date', { ascending: false });
+    .from('daily_market_stats')
+    .select('origin_country, dest_country, body_group, stat_date, total_price_amount, total_distance_km, offer_count, source')
+    .eq('body_group', 'ALL')
+    .eq('source', 'ALL')
+    .gte('stat_date', new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString())
+    .order('stat_date', { ascending: false });
 
   // Fetch hourly stats for sparkline and change calculations (last 7 days)
   const { data: hourlyStats } = await supabase
-      .from('hourly_market_stats')
-      .select('origin_country, dest_country, body_group, source, stat_hour, avg_rate_per_km')
-      .eq('body_group', 'ALL')
-      .eq('source', 'ALL')
-      .gte('stat_hour', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .order('stat_hour', { ascending: true });
+    .from('hourly_market_stats')
+    .select('origin_country, dest_country, body_group, source, stat_hour, avg_rate_per_km')
+    .eq('body_group', 'ALL')
+    .eq('source', 'ALL')
+    .gte('stat_hour', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+    .order('stat_hour', { ascending: true });
 
   // Calculate Global Stats
   const todayStr = new Date().toISOString().split('T')[0];
@@ -45,18 +46,18 @@ async function DashboardData() {
   const countryCounts: Record<string, number> = {};
 
   if (dailyStats) {
-      dailyStats.forEach((d: any) => {
-        const vol = Number(d.total_price_amount) || 0;
-        totalVol7d += vol;
-        if (d.stat_date === todayStr || d.stat_date === yesterdayStr) {
-            totalVol24h += vol;
-        }
-        countryCounts[d.origin_country] = (countryCounts[d.origin_country] || 0) + d.offer_count;
-        countryCounts[d.dest_country] = (countryCounts[d.dest_country] || 0) + d.offer_count;
-      });
+    dailyStats.forEach((d: any) => {
+      const vol = Number(d.total_price_amount) || 0;
+      totalVol7d += vol;
+      if (d.stat_date === todayStr || d.stat_date === yesterdayStr) {
+        totalVol24h += vol;
+      }
+      countryCounts[d.origin_country] = (countryCounts[d.origin_country] || 0) + d.offer_count;
+      countryCounts[d.dest_country] = (countryCounts[d.dest_country] || 0) + d.offer_count;
+    });
   }
 
-  const sortedCountries = Object.entries(countryCounts).sort(([,a], [,b]) => b - a).slice(0, 2);
+  const sortedCountries = Object.entries(countryCounts).sort(([, a], [, b]) => b - a).slice(0, 2);
   const totalActivity = Object.values(countryCounts).reduce((a, b) => a + b, 0);
   const dominanceStr = sortedCountries.length > 0
     ? sortedCountries.map(([code, count]) => `${code} ${((count / totalActivity) * 100).toFixed(1)}%`).join(' ')
@@ -135,7 +136,7 @@ async function DashboardData() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
       <DashboardData />
     </Suspense>
   );

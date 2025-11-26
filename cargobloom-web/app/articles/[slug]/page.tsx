@@ -95,7 +95,13 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
             {/* Content Section */}
             <div className="max-w-[800px] mx-auto px-4 md:px-8 py-12">
                 <article
-                    className="prose prose-lg dark:prose-invert max-w-none"
+                    className="prose prose-lg dark:prose-invert max-w-none 
+                    prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-foreground
+                    prose-h2:text-3xl prose-h2:mt-12 prose-h2:mb-6 
+                    prose-p:text-muted-foreground prose-p:leading-relaxed prose-p:mb-6
+                    prose-li:text-muted-foreground prose-li:marker:text-primary
+                    prose-strong:text-foreground prose-strong:font-semibold
+                    prose-a:text-primary prose-a:no-underline hover:prose-a:underline"
                     dangerouslySetInnerHTML={{ __html: article.content }}
                 />
             </div>
